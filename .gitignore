@@ -1,0 +1,9 @@
+# config — only the example and schema are tracked
+backup*.json
+!backup.example.json
+!backup.schema.json
+
+# hooks — only .env.example is tracked
+hooks/*.sh
+hooks/.env
+!hooks/.env.example

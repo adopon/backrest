@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+#
+# backrest — unified backup runner (JSON config)
+#
+# Usage:
+#   ./backrest                  run all profiles
+#   ./backrest myprofile        run single profile
+#   ./backrest --dry-run        show what would be done
+#   ./backrest --config /path/to/backup.json
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/backup.json"
+
+DRY_RUN=false
+TARGET=""
+VALIDATE_ONLY=false
+SHOW_PROGRESS=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run) DRY_RUN=true; shift ;;
+        --config)  CONFIG_FILE="$2"; shift 2 ;;
+        --validate) VALIDATE_ONLY=true; shift ;;
+        --progress) SHOW_PROGRESS=true; shift ;;
+        *)          TARGET="$1"; shift ;;
+    esac
+done
+
+export SHOW_PROGRESS
+
+# shellcheck source=./lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Config file not found: $CONFIG_FILE" >&2
+    exit 1
+fi
+
+CONFIG_SCHEMA="$SCRIPT_DIR/backup.schema.json"
+
+validate_config() {
+    if command -v check-jsonschema &>/dev/null; then
+        check-jsonschema --schemafile "$CONFIG_SCHEMA" "$CONFIG_FILE"
+    elif command -v ajv &>/dev/null; then
+        ajv validate -s "$CONFIG_SCHEMA" -d "$CONFIG_FILE"
+    else
+        if [[ "$VALIDATE_ONLY" == true ]]; then
+            echo "Error: no JSON schema validator found (install check-jsonschema or ajv)" >&2
+            return 1
+        fi
+        return 0
+    fi
+}
+
+if [[ "$VALIDATE_ONLY" == true ]]; then
+    validate_config
+    exit $?
+fi
+
+validate_config || exit 1
+
+if ! command -v restic &>/dev/null; then
+    echo "Error: restic not found. Install: https://restic.net" >&2
+    exit 1
+fi
+
+HEALTHCHECK_URL="${HEALTHCHECKS_URL:-$(conf '.global.healthchecks_url // empty')}"
+trap on_exit EXIT
+
+setup_logging
+
+if ! resolve_restic_auth; then
+    exit 1
+fi
+
+ping_healthcheck start
+
+AVAILABLE_PROFILES=()
+while IFS= read -r p; do
+    AVAILABLE_PROFILES+=("$p")
+done < <(get_profiles)
+
+ENABLED_PROFILES=()
+while IFS= read -r p; do
+    ENABLED_PROFILES+=("$p")
+done < <(get_enabled_profiles)
+
+PROFILES_TO_RUN=()
+if [[ -n "$TARGET" ]]; then
+    for p in "${AVAILABLE_PROFILES[@]}"; do
+        [[ "$p" == "$TARGET" ]] && PROFILES_TO_RUN=("$TARGET") && break
+    done
+    if [[ ${#PROFILES_TO_RUN[@]} -eq 0 ]]; then
+        err "Unknown profile: $TARGET"
+        err "Available: ${AVAILABLE_PROFILES[*]}"
+        exit 1
+    fi
+else
+    PROFILES_TO_RUN=("${ENABLED_PROFILES[@]}")
+    for p in "${AVAILABLE_PROFILES[@]}"; do
+        if [[ ! " ${ENABLED_PROFILES[*]} " == *" $p "* ]]; then
+            info "[$p] Disabled (enabled: false) — skipping"
+        fi
+    done
+fi
+
+for profile in "${PROFILES_TO_RUN[@]}"; do
+    ptype="$(profile_val "$profile" type)"
+
+    if [[ "$DRY_RUN" == true ]]; then
+        src="$(profile_val "$profile" src)"
+        case "$ptype" in
+            restic) repo="$(profile_val "$profile" repo)"
+                    check="$(profile_val "$profile" check)"; [[ -z "$check" ]] && check="$(conf '.global.check // "full"')"
+                    echo "DRY-RUN [$profile] restic $src → $repo (check: $check)" ;;
+            rsync)  dest="$(profile_val "$profile" dest)"; echo "DRY-RUN [$profile] rsync  $src → $dest"
+                    if [[ "$(profile_has "$profile" "remote_dest")" == "true" ]]; then
+                        remote="$(profile_val "$profile" remote_dest)"
+                        echo "DRY-RUN [$profile] rsync  $src → $remote (remote)"
+                    fi
+                    ;;
+        esac
+        continue
+    fi
+
+    echo ""
+    info "========== Profile: $profile ($ptype) =========="
+
+    run_hook "$profile" "pre" || true
+
+    case "$ptype" in
+        restic)
+            backup_restic "$profile"
+            rc=$?
+            ;;
+        rsync)
+            backup_rsync "$profile"
+            rc=$?
+            if [[ $rc -eq 0 ]] || [[ $rc -eq 2 ]]; then
+                backup_rsync_remote "$profile" || true
+            fi
+            ;;
+        *)
+            warn "[$profile] Unknown type '$ptype' — skipping"
+            rc=2
+            ;;
+    esac
+
+    run_hook "$profile" "post" || true
+
+    case $rc in
+        0) summary_ok+=("$profile") ;;
+        2) summary_skip+=("$profile") ;;
+        *) summary_err+=("$profile") ;;
+    esac
+done
+
+cleanup_old_logs
+print_summary
+
+[[ ${#summary_err[@]} -eq 0 ]] && exit 0 || exit 1

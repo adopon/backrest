@@ -1,0 +1,54 @@
+# Generate a password for restic repos
+mkdir -p ~/.config/backrest
+chmod 700 ~/.config/backrest
+openssl rand -base64 32 | tr -d '\n' > ~/.config/backrest/restic-password
+chmod 600 ~/.config/backrest/restic-password
+
+# This file path is referenced in backup.json:
+#   "restic_password_file": "~/.config/backrest/restic-password"
+
+
+# ============================================================
+# Scheduling with systemd timer
+# ============================================================
+
+# Create service file (adjust ExecStart and User)
+sudo tee /etc/systemd/system/backrest.service <<'EOF'
+[Unit]
+Description=Backrest backup runner
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/path/to/backrest
+User=youruser
+EOF
+
+# Create timer file
+sudo tee /etc/systemd/system/backrest.timer <<'EOF'
+[Unit]
+Description=Daily backrest timer
+Requires=backrest.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable --now backrest.timer
+
+# Check status
+systemctl status backrest.timer
+systemctl list-timers backrest.timer
+
+# Trigger now (for testing)
+sudo systemctl start backrest.service
+
+# View logs
+journalctl -u backrest.service -f

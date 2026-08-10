@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/backrest.schema.json",
+  "title": "backrest config",
+  "description": "Configuration for the backrest unified backup runner.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profiles"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path to the JSON Schema used for validation/autocomplete. Do not remove."
+    },
+    "log_dir": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Directory where backup run logs are written. Supports $HOME and environment variables."
+    },
+    "log_retention_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Delete backup-*.log files older than this many days."
+    },
+    "paths": {
+      "type": "object",
+      "description": "Named path placeholders. Values are substituted for ${name} references anywhere in the config (e.g. \"storage\": \"/mnt/drive\" makes ${storage}/restic/x valid).",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "global": {
+      "type": "object",
+      "description": "Settings shared by all profiles.",
+      "additionalProperties": false,
+      "properties": {
+        "restic_password_file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to a file containing the restic repository password."
+        },
+        "restic_password_command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Command that prints the restic password to stdout. Alternative to restic_password_file."
+        },
+        "restic_compression": {
+          "type": "string",
+          "description": "restic --compression value (e.g. auto, max, off)."
+        },
+        "check": {
+          "enum": ["full", "quick", "never"],
+          "description": "Default integrity check mode for restic profiles.\n- full: restic check --read-data (reads whole repo, slow)\n- quick: restic check (metadata only, fast)\n- never: skip integrity check"
+        },
+        "healthchecks_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Healthchecks.io check URL. Pings <url>/start on start, <url> on success, <url>/fail on failure. Empty disables."
+        }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Backup jobs. Each key is a profile name (run one via ./backrest <name>).",
+      "propertyNames": { "pattern": "^[a-zA-Z0-9_-]+$" },
+      "additionalProperties": { "$ref": "#/$defs/profile" }
+    }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "src"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When false, the profile is skipped on 'run all' but can still be run explicitly (./backrest <name>). Defaults to true."
+        },
+        "type": {
+          "enum": ["restic", "rsync"],
+          "description": "Backend:\n- restic: incremental deduped snapshots to a restic repo\n- rsync: mirror copy to a local dest (and optionally remote_dest)"
+        },
+        "src": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source path to back up. Supports ${path} placeholders. May be a host:path (remote) reference."
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1,
+          "description": "(restic only) Path to the restic repository. Created/initialized automatically on first run."
+        },
+        "dest": {
+          "type": "string",
+          "minLength": 1,
+          "description": "(rsync only) Local destination directory for the mirror."
+        },
+        "remote_dest": {
+          "type": "string",
+          "minLength": 1,
+          "description": "(rsync only) Optional second rsync destination, e.g. user@host:/path for off-site copies."
+        },
+        "retention": {
+          "type": "string",
+          "minLength": 1,
+          "description": "(restic only) restic forget policy string, e.g. \"keep-daily 7 keep-weekly 4\". Defaults to \"keep-last 10\"."
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "(restic only) rsync/restic --exclude patterns. Skips matching files/dirs."
+        },
+        "prehook": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Executable script run before the backup (e.g. database dump, stop container). Must be executable."
+        },
+        "posthook": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Executable script run after the backup, even on failure (e.g. restart container). Must be executable."
+        },
+        "check": {
+          "enum": ["full", "quick", "never"],
+          "description": "Integrity check mode, overrides global.check. See global.check."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "restic" } } },
+          "then": { "required": ["repo"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "rsync" } } },
+          "then": { "required": ["dest"] }
+        }
+      ]
+    }
+  }
+}

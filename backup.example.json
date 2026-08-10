@@ -1,0 +1,27 @@
+{
+  "log_dir": "$HOME/.local/log/backrest",
+  "log_retention_days": 30,
+  "paths": {
+    "fast": "/mnt/cloud-drive",
+    "storage": "/mnt/backup-drive",
+    "home": "/home/youruser"
+  },
+  "global": {
+    "restic_password_file": "~/.config/backrest/restic-password"
+  },
+  "profiles": {
+    "photos": {
+      "enabled": true,
+      "type": "restic",
+      "src": "${fast}/media/photos",
+      "repo": "${storage}/backrest/photos",
+      "retention": "keep-daily 7 keep-weekly 4 keep-monthly 6"
+    },
+    "documents": {
+      "enabled": true,
+      "type": "rsync",
+      "src": "${home}/documents",
+      "dest": "${storage}/backup/documents"
+    }
+  }
+}
