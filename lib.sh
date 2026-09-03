@@ -435,6 +435,8 @@ backup_s3() {
         while IFS= read -r flag; do
             [[ -n "$flag" ]] && extra_flags+=("$flag")
         done < <(conf ".profiles.\"$profile\".flags[]?")
+    else
+        extra_flags=(--checksum)
     fi
 
     info "[$profile] Starting rclone sync: $src → $dest"

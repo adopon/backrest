@@ -114,7 +114,7 @@
         "flags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "(s3 only) Extra rclone flags passed to the sync, e.g. [\"--checksum\"] to compare by checksum instead of size+mtime (fixes needless re-uploads on cloud-to-cloud sync)."
+          "description": "(s3 only) Extra rclone flags passed to the sync. Defaults to [\"--checksum\"] (compare by checksum instead of size+mtime) when unset; set this to override, e.g. [\"--size-only\"]."
         },
         "prehook": {
           "type": "string",

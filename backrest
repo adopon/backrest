@@ -162,7 +162,7 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
                     if [[ "$(profile_has "$profile" "flags")" == "true" ]]; then
                         echo "DRY-RUN [$profile] rclone $src → $dest (flags: $(conf ".profiles.\"$profile\".flags[]?" | paste -sd ' ' -))"
                     else
-                        echo "DRY-RUN [$profile] rclone $src → $dest"
+                        echo "DRY-RUN [$profile] rclone $src → $dest (flags: --checksum)"
                     fi
                     ;;
             sqlite) repo="$(profile_val "$profile" repo)"; echo "DRY-RUN [$profile] sqlite $src → $repo (snapshot via restic)" ;;

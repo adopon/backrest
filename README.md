@@ -113,14 +113,13 @@ A mirror sync to a cloud bucket via `rclone sync`. The destination uses an rclon
 "photos-cloud": {
   "type": "s3",
   "src": "${fast}/media/photos",
-  "dest": "backup-bucket:backups/photos",
-  "flags": ["--checksum"]
+  "dest": "backup-bucket:backups/photos"
 }
 ```
 
 Note: `rclone sync` mirrors the source — files removed locally are deleted remotely.
 
-`flags` lets you pass extra `rclone` options. The main one: `["--checksum"]`, which compares files by checksum (ETag/SHA1) instead of size+mtime. Without it, rclone decides what to sync by size and modification time, so cloud-to-cloud syncs (e.g. MinIO→B2, or S3→S3) can re-upload unchanged files every run when the destination's stored mtime doesn't exactly match the source's. `--size-only` and `--update` are alternatives, but `--checksum` is the reliable fix for that case.
+`flags` lets you pass extra `rclone` options. It's optional: `s3` profiles already default to `--checksum`, which compares files by checksum (ETag/SHA1) instead of size+mtime. Without a checksum comparison, rclone decides what to sync by size and modification time, so cloud-to-cloud syncs (e.g. MinIO→B2, or S3→S3) re-upload unchanged files every run when the destination's stored mtime doesn't exactly match the source's. Set `flags` only to override the default, e.g. `["--size-only"]`.
 
 #### sqlite
 
@@ -149,7 +148,7 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 | `remote_dest` | string | (rsync) Optional second destination, e.g. `user@host:/path`. |
 | `retention` | string | (restic/sqlite) Restic `forget` policy. For sqlite: `keep-last`, `keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`. Defaults to `keep-last 10`. |
 | `exclude` | array | Glob patterns to skip. |
-| `flags` | array | (s3) Extra `rclone` flags, e.g. `["--checksum"]` to compare by checksum. |
+| `flags` | array | (s3) Extra `rclone` flags. Defaults to `["--checksum"]`; set to override. |
 | `prehook` | string | Script to run before backup (e.g. database dump, stop container). |
 | `posthook` | string | Script to run after backup, even on failure (e.g. restart container). |
 | `check` | string | Per-profile integrity check override (`full`, `quick`, `never`). |
