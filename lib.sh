@@ -23,6 +23,17 @@ ok()   { log "${GREEN}[OK]${NC}   $*"; }
 warn() { log "${YELLOW}[WARN]${NC} $*"; }
 err()  { log "${RED}[ERR]${NC}  $*"; }
 
+# After a failed command (output goes only to $LOG_FILE), print the most recent
+# log lines plus the log path so the underlying tool error is visible.
+show_tool_error() {
+    local profile="$1" msg="$2"
+    local tail_out
+    tail_out="$(tail -n 20 "$LOG_FILE" 2>/dev/null || true)"
+    err "[$profile] $msg"
+    err "[$profile] Full log: $LOG_FILE"
+    [[ -n "$tail_out" ]] && printf '%s\n' "$tail_out" | sed 's/^/    /'
+}
+
 summary_ok=()
 summary_err=()
 summary_skip=()
@@ -213,7 +224,7 @@ restic_repo_init() {
     fi
     info "[$profile] Initializing restic repo at $repo"
     restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" init >> "$LOG_FILE" 2>&1 || {
-        err "[$profile] Failed to init repo"; return 1
+        show_tool_error "$profile" "Failed to init repo"; return 1
     }
 }
 
@@ -248,7 +259,7 @@ restic_backup() {
         ok "[$profile] Backup completed"
         return 0
     else
-        err "[$profile] Backup failed"
+        show_tool_error "$profile" "Backup failed"
         return 1
     fi
 }
@@ -363,7 +374,7 @@ backup_rsync() {
         ok "[$profile] Rsync completed"
         return 0
     else
-        err "[$profile] Rsync failed"
+        show_tool_error "$profile" "Rsync failed"
         return 1
     fi
 }
@@ -444,7 +455,7 @@ backup_s3() {
         ok "[$profile] S3 sync completed"
         return 0
     else
-        err "[$profile] S3 sync failed"
+        show_tool_error "$profile" "S3 sync failed"
         return 1
     fi
 }
@@ -472,7 +483,7 @@ backup_sqlite() {
 
     info "[$profile] Taking consistent sqlite snapshot: $src"
     if ! sqlite3 "$src" ".backup '$snap'" >> "$LOG_FILE" 2>&1; then
-        err "[$profile] sqlite snapshot failed"
+        show_tool_error "$profile" "sqlite snapshot failed"
         rm -rf "$tmpdir"
         return 1
     fi
@@ -485,7 +496,7 @@ backup_sqlite() {
             --stdin-filename "$(restic_stdin_filename "$src")" --verbose >> "$LOG_FILE" 2>&1; then
             ok "[$profile] Backup completed"
         else
-            err "[$profile] Backup failed"
+            show_tool_error "$profile" "Backup failed"
             rc=1
         fi
     fi
