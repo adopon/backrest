@@ -41,6 +41,10 @@
           "minLength": 1,
           "description": "Command that prints the restic password to stdout. Alternative to restic_password_file."
         },
+        "restic_password_autogen": {
+          "type": "boolean",
+          "description": "When true and no password_file/command is set, generate a random restic password on first run and save it to ~/.config/backrest/restic-password. Reused on subsequent runs."
+        },
         "restic_compression": {
           "type": "string",
           "description": "restic --compression value (e.g. auto, max, off)."
@@ -74,8 +78,8 @@
           "description": "When false, the profile is skipped on 'run all' but can still be run explicitly (./backrest <name>). Defaults to true."
         },
         "type": {
-          "enum": ["restic", "rsync"],
-          "description": "Backend:\n- restic: incremental deduped snapshots to a restic repo\n- rsync: mirror copy to a local dest (and optionally remote_dest)"
+          "enum": ["restic", "rsync", "s3", "sqlite"],
+          "description": "Backend:\n- restic: incremental deduped snapshots to a restic repo\n- rsync: mirror copy to a local dest (and optionally remote_dest)\n- s3: rclone sync to a cloud bucket (e.g. myremote:bucket/path)\n- sqlite: versioned sqlite3 snapshots of a database to a dest dir"
         },
         "src": {
           "type": "string",
@@ -85,12 +89,12 @@
         "repo": {
           "type": "string",
           "minLength": 1,
-          "description": "(restic only) Path to the restic repository. Created/initialized automatically on first run."
+          "description": "(restic/sqlite only) Path to the restic repository. Created/initialized automatically on first run. For sqlite, the consistent snapshot is stored here."
         },
         "dest": {
           "type": "string",
           "minLength": 1,
-          "description": "(rsync only) Local destination directory for the mirror."
+          "description": "(rsync/s3 only) Local destination directory for rsync, or rclone remote path (e.g. myremote:bucket/path) for s3."
         },
         "remote_dest": {
           "type": "string",
@@ -100,7 +104,7 @@
         "retention": {
           "type": "string",
           "minLength": 1,
-          "description": "(restic only) restic forget policy string, e.g. \"keep-daily 7 keep-weekly 4\". Defaults to \"keep-last 10\"."
+          "description": "(restic/sqlite only) restic forget policy string, e.g. \"keep-daily 7 keep-weekly 4\". Defaults to \"keep-last 10\"."
         },
         "exclude": {
           "type": "array",
@@ -128,7 +132,15 @@
           "then": { "required": ["repo"] }
         },
         {
+          "if": { "properties": { "type": { "const": "sqlite" } } },
+          "then": { "required": ["repo"] }
+        },
+        {
           "if": { "properties": { "type": { "const": "rsync" } } },
+          "then": { "required": ["dest"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "s3" } } },
           "then": { "required": ["dest"] }
         }
       ]

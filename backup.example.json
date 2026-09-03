@@ -1,4 +1,5 @@
 {
+  "$schema": "./backup.schema.json",
   "log_dir": "$HOME/.local/log/backrest",
   "log_retention_days": 30,
   "paths": {
@@ -22,6 +23,19 @@
       "type": "rsync",
       "src": "${home}/documents",
       "dest": "${storage}/backup/documents"
+    },
+    "myapp-db": {
+      "enabled": true,
+      "type": "sqlite",
+      "src": "/srv/myapp/data.db",
+      "repo": "${storage}/backrest/db/myapp",
+      "retention": "keep-daily 7 keep-weekly 4 keep-monthly 6"
+    },
+    "photos-cloud": {
+      "enabled": false,
+      "type": "s3",
+      "src": "${fast}/media/photos",
+      "dest": "backup-bucket:backups/photos"
     }
   }
 }

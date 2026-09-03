@@ -17,12 +17,38 @@ DRY_RUN=false
 TARGET=""
 VALIDATE_ONLY=false
 SHOW_PROGRESS=false
+SKIP_VALIDATION=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --help|-h)
+            cat <<'EOF'
+backrest — unified backup runner (JSON config)
+
+Usage:
+  ./backrest [options] [profile]
+
+Commands:
+  profile               run a single profile
+
+Options:
+  -h, --help            show this help message
+  --dry-run             show what would be done without running
+  --validate            validate config and exit
+  --no-validate         skip config schema validation
+  --config PATH         use a different config file (default: ./backup.json)
+  --progress            show rsync progress in terminal
+
+Exit codes:
+  0  all profiles succeeded
+  1  at least one profile failed
+EOF
+            exit 0
+            ;;
         --dry-run) DRY_RUN=true; shift ;;
         --config)  CONFIG_FILE="$2"; shift 2 ;;
         --validate) VALIDATE_ONLY=true; shift ;;
+        --no-validate) SKIP_VALIDATION=true; shift ;;
         --progress) SHOW_PROGRESS=true; shift ;;
         *)          TARGET="$1"; shift ;;
     esac
@@ -41,17 +67,14 @@ fi
 CONFIG_SCHEMA="$SCRIPT_DIR/backup.schema.json"
 
 validate_config() {
-    if command -v check-jsonschema &>/dev/null; then
-        check-jsonschema --schemafile "$CONFIG_SCHEMA" "$CONFIG_FILE"
-    elif command -v ajv &>/dev/null; then
-        ajv validate -s "$CONFIG_SCHEMA" -d "$CONFIG_FILE"
-    else
-        if [[ "$VALIDATE_ONLY" == true ]]; then
-            echo "Error: no JSON schema validator found (install check-jsonschema or ajv)" >&2
-            return 1
-        fi
-        return 0
+    if ! command -v check-jsonschema &>/dev/null; then
+        echo "Error: check-jsonschema not found." >&2
+        echo "  Install: pip install check-jsonschema" >&2
+        echo "  (or)    sudo apt install python3-check-jsonschema   # Debian trixie+/Ubuntu 24.04+" >&2
+        echo "  Or run backrest with --no-validate to skip validation." >&2
+        return 1
     fi
+    check-jsonschema --schemafile "$CONFIG_SCHEMA" "$CONFIG_FILE"
 }
 
 if [[ "$VALIDATE_ONLY" == true ]]; then
@@ -59,23 +82,14 @@ if [[ "$VALIDATE_ONLY" == true ]]; then
     exit $?
 fi
 
-validate_config || exit 1
-
-if ! command -v restic &>/dev/null; then
-    echo "Error: restic not found. Install: https://restic.net" >&2
-    exit 1
+if [[ "$SKIP_VALIDATION" == false ]]; then
+    validate_config || exit 1
 fi
 
 HEALTHCHECK_URL="${HEALTHCHECKS_URL:-$(conf '.global.healthchecks_url // empty')}"
 trap on_exit EXIT
 
 setup_logging
-
-if ! resolve_restic_auth; then
-    exit 1
-fi
-
-ping_healthcheck start
 
 AVAILABLE_PROFILES=()
 while IFS= read -r p; do
@@ -106,6 +120,28 @@ else
     done
 fi
 
+NEEDS_RESTIC=false
+if [[ ${#PROFILES_TO_RUN[@]} -gt 0 ]]; then
+    for profile in "${PROFILES_TO_RUN[@]}"; do
+        if [[ "$(profile_val "$profile" type)" == "restic" || "$(profile_val "$profile" type)" == "sqlite" ]]; then
+            NEEDS_RESTIC=true
+            break
+        fi
+    done
+fi
+
+if [[ "$NEEDS_RESTIC" == true ]]; then
+    if ! command -v restic &>/dev/null; then
+        echo "Error: restic not found. Install: https://restic.net" >&2
+        exit 1
+    fi
+    if ! resolve_restic_auth; then
+        exit 1
+    fi
+fi
+
+ping_healthcheck start
+
 for profile in "${PROFILES_TO_RUN[@]}"; do
     ptype="$(profile_val "$profile" type)"
 
@@ -121,6 +157,8 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
                         echo "DRY-RUN [$profile] rsync  $src → $remote (remote)"
                     fi
                     ;;
+            s3)     dest="$(profile_val "$profile" dest)"; echo "DRY-RUN [$profile] rclone $src → $dest" ;;
+            sqlite) repo="$(profile_val "$profile" repo)"; echo "DRY-RUN [$profile] sqlite $src → $repo (snapshot via restic)" ;;
         esac
         continue
     fi
@@ -141,6 +179,14 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
             if [[ $rc -eq 0 ]] || [[ $rc -eq 2 ]]; then
                 backup_rsync_remote "$profile" || true
             fi
+            ;;
+        s3)
+            backup_s3 "$profile"
+            rc=$?
+            ;;
+        sqlite)
+            backup_sqlite "$profile"
+            rc=$?
             ;;
         *)
             warn "[$profile] Unknown type '$ptype' — skipping"

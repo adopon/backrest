@@ -5,13 +5,20 @@ A JSON-driven backup runner wrapping [restic](https://restic.net) (incremental, 
 ## Dependencies
 
 - [`jq`](https://stedolan.github.io/jq/) — JSON parsing
+- [`check-jsonschema`](https://github.com/python-jsonschema/check-jsonschema) — config validation
 - `restic` — for `type: restic` profiles
 - `rsync` — for `type: rsync` profiles
-- Optional: `check-jsonschema` or `ajv` — config validation
+- `rclone` — for `type: s3` profiles
+- `sqlite3` — for `type: sqlite` profiles
 
 ```bash
-sudo apt install jq restic rsync
+sudo apt install jq restic rsync rclone sqlite3
+# config validation — pick one:
+sudo apt install python3-check-jsonschema    # Debian trixie+/Ubuntu 24.04+
+pip install check-jsonschema                 # universal (also: pipx install check-jsonschema)
 ```
+
+If `check-jsonschema` is unavailable, backrest still runs — just add `--no-validate` to skip config validation (it only checks schema; the config is still parsed for paths, etc.).
 
 ## Quick start
 
@@ -22,6 +29,10 @@ cp backup.example.json backup.json
 ./backrest --dry-run     # preview what will run
 ./backrest               # run all enabled profiles
 ```
+
+### Editor autocomplete
+
+`backup.json` contains a `$schema` key pointing to `backup.schema.json`. This gives JSON schema validation and autocomplete in editors with LSP support (e.g. Neovim's jsonls, VSCode). The `$schema` field is ignored by `check-jsonschema`, so it's safe to keep.
 
 ## Configuration
 
@@ -47,6 +58,7 @@ Settings shared across all profiles:
 |-----|-------------|
 | `restic_password_file` | Path to file containing the restic repo password |
 | `restic_password_command` | Command that prints the password (alternative) |
+| `restic_password_autogen` | Generate a random password into `~/.config/backrest/restic-password` on first run |
 | `check` | Default integrity check: `full`, `quick`, or `never` |
 | `healthchecks_url` | Healthchecks.io ping URL (optional) |
 
@@ -85,17 +97,46 @@ A local mirror copy. Supports an optional `remote_dest` for off-site replication
 }
 ```
 
+#### s3
+
+A mirror sync to a cloud bucket via `rclone sync`. The destination uses an rclone remote name (configured with `rclone config`), e.g. `myremote:bucket/path`.
+
+```json
+"photos-cloud": {
+  "type": "s3",
+  "src": "${fast}/media/photos",
+  "dest": "backup-bucket:backups/photos"
+}
+```
+
+Note: `rclone sync` mirrors the source — files removed locally are deleted remotely.
+
+#### sqlite
+
+Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (safe while the DB is in use, handles WAL mode). The consistent snapshot is backed up into a restic repo, so you get restic's deduplication and battle-tested `forget` retention policies.
+
+```json
+"myapp-db": {
+  "type": "sqlite",
+  "src": "/srv/myapp/data.db",
+  "repo": "${storage}/backrest/db/myapp",
+  "retention": "keep-daily 7 keep-weekly 4 keep-monthly 6"
+}
+```
+
+`retention` is a standard restic `forget` policy (`keep-last`, `keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`). Defaults to `keep-last 10`.
+
 ### Profile fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `enabled` | bool | When `false`, skipped during "run all". Can still be run explicitly. Defaults to `true`. |
-| `type` | string | `restic` or `rsync` |
-| `src` | string | Source path. Supports `${path}` placeholders and `host:path` remote references. |
-| `repo` | string | (restic) Path to the restic repository. Created automatically. |
-| `dest` | string | (rsync) Local destination directory. |
+| `type` | string | `restic`, `rsync`, `s3`, or `sqlite` |
+| `src` | string | Source path. Supports `${path}` placeholders and `host:path` remote references. For sqlite, the path to the `.db` file. |
+| `repo` | string | (restic/sqlite) Path to the restic repository. Created automatically. |
+| `dest` | string | (rsync/s3) Local destination directory (rsync) or rclone remote path like `remote:bucket/path` (s3). |
 | `remote_dest` | string | (rsync) Optional second destination, e.g. `user@host:/path`. |
-| `retention` | string | (restic) Restic `forget` policy. Defaults to `keep-last 10`. |
+| `retention` | string | (restic/sqlite) Restic `forget` policy. For sqlite: `keep-last`, `keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`. Defaults to `keep-last 10`. |
 | `exclude` | array | Glob patterns to skip. |
 | `prehook` | string | Script to run before backup (e.g. database dump, stop container). |
 | `posthook` | string | Script to run after backup, even on failure (e.g. restart container). |
@@ -108,6 +149,7 @@ A local mirror copy. Supports an optional `remote_dest` for off-site replication
 ./backrest photos              run a single profile
 ./backrest --dry-run           preview what would run
 ./backrest --validate          validate config against schema
+./backrest --no-validate       skip config schema validation
 ./backrest --config /path/to/backup.json   use a different config
 ./backrest --progress          show rsync progress in terminal
 ```
@@ -146,7 +188,7 @@ Logs are written to the directory set in `log_dir` (defaults to `~/.local/log/ba
 
 ## Password setup
 
-restic needs a repository password. Generate one:
+restic needs a repository password. Either generate one manually:
 
 ```bash
 mkdir -p ~/.config/backrest
@@ -156,6 +198,8 @@ chmod 600 ~/.config/backrest/restic-password
 ```
 
 Then set `restic_password_file` in `global`.
+
+Or set `"restic_password_autogen": true` in `global` and backrest generates the password into `~/.config/backrest/restic-password` on first run (reusing it on later runs). Note: existing restic repos can only be decrypted with the password they were created with, so don't switch methods on an existing repo.
 
 ## Healthchecks.io
 
