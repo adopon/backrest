@@ -163,10 +163,10 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 ./backrest --no-validate       skip config schema validation
 ./backrest --config /path/to/backup.json   use a different config
 ./backrest --progress          show rsync progress in terminal
-./backrest --logs              follow the live backup log (like `docker logs -f`)
+./backrest --follow, -f  follow the live backup log (like `docker logs -f`)
 ```
 
-Each run's log is written to `log_dir/backup-<timestamp>.log`; `backup-current.log` is a symlink to the most recent one. `./backrest --logs` tails it and follows across runs (`tail -F`).
+Each run's log is written to `log_dir/backup-<timestamp>.log`; `backup-current.log` is a symlink to the most recent one. `./backrest --follow` tails it and follows across runs (`tail -F`).
 
 ## Hooks
 

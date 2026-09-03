@@ -23,7 +23,7 @@ Guidance for AI agents working in this repo.
 ./backrest --no-validate         # skip config schema validation
 ./backrest --config PATH         # use a different config file
 ./backrest --progress            # show rsync/rclone progress on terminal
-./backrest --logs                # follow current backup log live (like docker logs -f)
+./backrest --follow, -f # follow current backup log live (like docker logs -f)
 ./backrest --help                # usage
 ```
 

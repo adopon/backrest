@@ -39,7 +39,7 @@ Options:
   --no-validate         skip config schema validation
   --config PATH         use a different config file (default: ./backup.json)
   --progress            show rsync progress in terminal
-  --logs                follow the current backup log (like docker logs -f)
+  --follow, -f          follow the current backup log (like docker logs -f)
 
 Exit codes:
   0  all profiles succeeded
@@ -52,7 +52,7 @@ EOF
         --validate) VALIDATE_ONLY=true; shift ;;
         --no-validate) SKIP_VALIDATION=true; shift ;;
         --progress) SHOW_PROGRESS=true; shift ;;
-        --logs)     TAIL_LOG=true; shift ;;
+        --follow|-f) TAIL_LOG=true; shift ;;
         *)          TARGET="$1"; shift ;;
     esac
 done
