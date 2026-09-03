@@ -208,11 +208,24 @@ resolve_restic_auth() {
 
 restic_repo_init() {
     local profile="$1" repo="$2"
-    if ! restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" snapshots --no-lock &>/dev/null; then
-        info "[$profile] Initializing restic repo at $repo"
-        restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" init >> "$LOG_FILE" 2>&1 || {
-            err "[$profile] Failed to init repo"; return 1
-        }
+    if [[ -f "$repo/config" ]]; then
+        return 0
+    fi
+    info "[$profile] Initializing restic repo at $repo"
+    restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" init >> "$LOG_FILE" 2>&1 || {
+        err "[$profile] Failed to init repo"; return 1
+    }
+}
+
+# restic 0.18.0 breaks on --stdin-filename with directory components (#5324);
+# every other version (<=0.17.x and >=0.18.1) handles the full path fine.
+restic_stdin_filename() {
+    local v
+    v="$(restic version 2>/dev/null | awk '{print $2}')"
+    if [[ "$v" == "0.18.0" ]]; then
+        basename "$1"
+    else
+        printf '%s\n' "$1"
     fi
 }
 
@@ -460,7 +473,7 @@ backup_sqlite() {
     if [[ $rc -eq 0 ]]; then
         info "[$profile] Starting restic backup: $src → $repo"
         if cat "$snap" | restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" backup --stdin \
-            --stdin-filename "$src" --verbose >> "$LOG_FILE" 2>&1; then
+            --stdin-filename "$(restic_stdin_filename "$src")" --verbose >> "$LOG_FILE" 2>&1; then
             ok "[$profile] Backup completed"
         else
             err "[$profile] Backup failed"
