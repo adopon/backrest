@@ -111,6 +111,11 @@
           "items": { "type": "string" },
           "description": "(restic only) rsync/restic --exclude patterns. Skips matching files/dirs."
         },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "(s3 only) Extra rclone flags passed to the sync, e.g. [\"--checksum\"] to compare by checksum instead of size+mtime (fixes needless re-uploads on cloud-to-cloud sync)."
+        },
         "prehook": {
           "type": "string",
           "minLength": 1,

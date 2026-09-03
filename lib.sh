@@ -430,8 +430,15 @@ backup_s3() {
         done < <(conf ".profiles.\"$profile\".exclude[]?")
     fi
 
+    local -a extra_flags=()
+    if [[ "$(profile_has "$profile" "flags")" == "true" ]]; then
+        while IFS= read -r flag; do
+            [[ -n "$flag" ]] && extra_flags+=("$flag")
+        done < <(conf ".profiles.\"$profile\".flags[]?")
+    fi
+
     info "[$profile] Starting rclone sync: $src → $dest"
-    if _rclone_pipe sync "$src" "$dest" "${exclude_args[@]}"; then
+    if _rclone_pipe sync "$src" "$dest" "${exclude_args[@]}" "${extra_flags[@]}"; then
         ok "[$profile] S3 sync completed"
         return 0
     else

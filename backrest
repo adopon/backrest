@@ -158,7 +158,13 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
                         echo "DRY-RUN [$profile] rsync  $src → $remote (remote)"
                     fi
                     ;;
-            s3)     dest="$(profile_val "$profile" dest)"; echo "DRY-RUN [$profile] rclone $src → $dest" ;;
+            s3)     dest="$(profile_val "$profile" dest)"
+                    if [[ "$(profile_has "$profile" "flags")" == "true" ]]; then
+                        echo "DRY-RUN [$profile] rclone $src → $dest (flags: $(conf ".profiles.\"$profile\".flags[]?" | paste -sd ' ' -))"
+                    else
+                        echo "DRY-RUN [$profile] rclone $src → $dest"
+                    fi
+                    ;;
             sqlite) repo="$(profile_val "$profile" repo)"; echo "DRY-RUN [$profile] sqlite $src → $repo (snapshot via restic)" ;;
         esac
         continue

@@ -35,7 +35,8 @@
       "enabled": false,
       "type": "s3",
       "src": "${fast}/media/photos",
-      "dest": "backup-bucket:backups/photos"
+      "dest": "backup-bucket:backups/photos",
+      "flags": ["--checksum"]
     }
   }
 }
