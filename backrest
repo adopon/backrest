@@ -18,6 +18,7 @@ TARGET=""
 VALIDATE_ONLY=false
 SHOW_PROGRESS=false
 SKIP_VALIDATION=false
+TAIL_LOG=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -38,6 +39,7 @@ Options:
   --no-validate         skip config schema validation
   --config PATH         use a different config file (default: ./backup.json)
   --progress            show rsync progress in terminal
+  --logs                follow the current backup log (like docker logs -f)
 
 Exit codes:
   0  all profiles succeeded
@@ -50,6 +52,7 @@ EOF
         --validate) VALIDATE_ONLY=true; shift ;;
         --no-validate) SKIP_VALIDATION=true; shift ;;
         --progress) SHOW_PROGRESS=true; shift ;;
+        --logs)     TAIL_LOG=true; shift ;;
         *)          TARGET="$1"; shift ;;
     esac
 done
@@ -62,6 +65,12 @@ source "$SCRIPT_DIR/lib.sh"
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "Error: Config file not found: $CONFIG_FILE" >&2
     exit 1
+fi
+
+if [[ "$TAIL_LOG" == true ]]; then
+    get_log_dir
+    mkdir -p "$LOG_DIR"
+    exec tail -F "$LOG_DIR/backup-current.log"
 fi
 
 CONFIG_SCHEMA="$SCRIPT_DIR/backup.schema.json"

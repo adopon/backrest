@@ -522,22 +522,26 @@ print_summary() {
     echo "Log: $LOG_FILE"
 }
 
-setup_logging() {
-    local log_dir log_retention
+get_log_dir() {
+    local log_dir
     log_dir="$(conf '.log_dir // "$HOME/.local/log/backup"' | envsubst)"
     eval "log_dir=\"$log_dir\""
-
     LOG_DIR="$log_dir"
+}
+
+setup_logging() {
+    get_log_dir
     mkdir -p "$LOG_DIR"
     LOG_FILE="$LOG_DIR/backup-$(date +%Y%m%d-%H%M%S).log"
     :> "$LOG_FILE"
+    ln -sfn "$LOG_FILE" "$LOG_DIR/backup-current.log"
     info "Backup started — $(date)"
 }
 
 cleanup_old_logs() {
     local retention
     retention="$(conf '.log_retention_days // 30')"
-    find "$LOG_DIR" -name "backup-*.log" -mtime "+$retention" -delete 2>/dev/null || true
+    find "$LOG_DIR" -type f -name "backup-*.log" -mtime "+$retention" -delete 2>/dev/null || true
 }
 
 HEALTHCHECK_URL=""
