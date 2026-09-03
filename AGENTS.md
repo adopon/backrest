@@ -86,5 +86,5 @@ If no method applies and a restic/sqlite profile is being run, backrest errors o
 
 - Bash with `set -euo pipefail`. All functions in `lib.sh`. New backup types need: a `backup_*` function in `lib.sh`, a dispatch + dry-run case in `backrest`, an enum entry + conditional `required` in `backup.schema.json`, README + example updates.
 - `sqlite` backups use restic `--stdin` with `--stdin-filename "$src"` so snapshot paths show the real source location (not a temp dir).
-- `check-jsonschema` requires the schema file; install via `pip install check-jsonschema` (or use a venv), or the apt package `python3-check-jsonschema` on Debian trixie+/Ubuntu 24.04+. Config validation can be skipped entirely with `--no-validate`.
+- `check-jsonschema` requires the schema file; install via `uv tool install check-jsonschema` (preferred — no system Python needed; get `uv` itself via `curl -LsSf https://astral.sh/uv/install.sh | sh`), `pip install check-jsonschema`, or the apt package `python3-check-jsonschema` on Debian trixie+/Ubuntu 24.04+. Config validation can be skipped entirely with `--no-validate`.
 - Hooks: optional `prehook`/`posthook` executable scripts per profile; they source `hooks/.env` for secrets (gitignored).

@@ -15,10 +15,18 @@ A JSON-driven backup runner wrapping [restic](https://restic.net) (incremental, 
 sudo apt install jq restic rsync rclone sqlite3
 # config validation — pick one:
 sudo apt install python3-check-jsonschema    # Debian trixie+/Ubuntu 24.04+
-pip install check-jsonschema                 # universal (also: pipx install check-jsonschema)
+uv tool install check-jsonschema             # via uv (no system Python needed)
+pip install check-jsonschema                 # via pip
 ```
 
 If `check-jsonschema` is unavailable, backrest still runs — just add `--no-validate` to skip config validation (it only checks schema; the config is still parsed for paths, etc.).
+
+If you don't have `uv` yet, install it once (single static binary, no system Python required):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.local/bin/env    # or restart your shell
+```
 
 ## Quick start
 

@@ -69,7 +69,8 @@ CONFIG_SCHEMA="$SCRIPT_DIR/backup.schema.json"
 validate_config() {
     if ! command -v check-jsonschema &>/dev/null; then
         echo "Error: check-jsonschema not found." >&2
-        echo "  Install: pip install check-jsonschema" >&2
+        echo "  Install: uv tool install check-jsonschema" >&2
+        echo "  (or)    pip install check-jsonschema" >&2
         echo "  (or)    sudo apt install python3-check-jsonschema   # Debian trixie+/Ubuntu 24.04+" >&2
         echo "  Or run backrest with --no-validate to skip validation." >&2
         return 1
