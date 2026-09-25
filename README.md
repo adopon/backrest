@@ -157,7 +157,9 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 
 ```
 ./backrest                     run all enabled profiles
-./backrest photos              run a single profile
+./backrest run photos          run a single profile
+./backrest snapshots photos    list restic snapshots for a restic/sqlite profile
+./backrest logs                follow the live backup log (like `docker logs -f`)
 ./backrest --dry-run           preview what would run
 ./backrest --validate          validate config against schema
 ./backrest --no-validate       skip config schema validation
@@ -166,7 +168,21 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 ./backrest --follow, -f  follow the live backup log (like `docker logs -f`)
 ```
 
-Each run's log is written to `log_dir/backup-<timestamp>.log`; `backup-current.log` is a symlink to the most recent one. `./backrest --follow` tails it and follows across runs (`tail -F`).
+The first positional argument may be an action (`run`, `snapshots`, `logs`); a bare profile name is treated as `run <profile>` for backwards compatibility.
+
+Each run's log is written to `log_dir/backup-<timestamp>.log`; `backup-current.log` is a symlink to the most recent one. `./backrest logs` tails it and follows across runs (`tail -F`).
+
+### Shell completion
+
+Tab-completion for bash, zsh, and fish, with profile names derived live from `backup.json` (the `snapshots` action only completes restic/sqlite profiles). Install once with:
+
+```bash
+./install.sh              # detect shell and install
+./install.sh fish         # or pick a shell explicitly
+./install.sh --remove     # uninstall
+```
+
+This adds `backrest` to `PATH` and sources the completion (block in `~/.bashrc` / `~/.zshrc`, or files in `~/.config/fish/completions/`). Set `BACKREST_CONFIG` to make completions read a different config file.
 
 ## Hooks
 

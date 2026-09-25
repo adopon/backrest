@@ -3,9 +3,11 @@
 # backrest — unified backup runner (JSON config)
 #
 # Usage:
-#   ./backrest                  run all profiles
-#   ./backrest myprofile        run single profile
-#   ./backrest --dry-run        show what would be done
+#   ./backrest                    run all profiles
+#   ./backrest run <profile>      run single profile
+#   ./backrest snapshots <p>      list restic snapshots for a profile
+#   ./backrest logs               follow the current backup log
+#   ./backrest --dry-run          show what would be done
 #   ./backrest --config /path/to/backup.json
 
 set -euo pipefail
@@ -13,6 +15,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/backup.json"
 
+ACTIONS="run snapshots logs"
+ACTION="run"
+ACTION_SET=false
 DRY_RUN=false
 TARGET=""
 VALIDATE_ONLY=false
@@ -27,19 +32,21 @@ while [[ $# -gt 0 ]]; do
 backrest — unified backup runner (JSON config)
 
 Usage:
-  ./backrest [options] [profile]
+  ./backrest [action] [profile] [options]
 
-Commands:
-  profile               run a single profile
+Actions:
+  run                       run backups (default; all enabled profiles, or one)
+  snapshots <profile>       list restic snapshots for a restic/sqlite profile
+  logs                      follow the current backup log (like docker logs -f)
 
 Options:
-  -h, --help            show this help message
-  --dry-run             show what would be done without running
-  --validate            validate config and exit
-  --no-validate         skip config schema validation
-  --config PATH         use a different config file (default: ./backup.json)
-  --progress            show rsync progress in terminal
-  --follow, -f          follow the current backup log (like docker logs -f)
+  -h, --help                show this help message
+  --dry-run                 show what would be done without running
+  --validate                validate config and exit
+  --no-validate             skip config schema validation
+  --config PATH             use a different config file (default: ./backup.json)
+  --progress                show rsync progress in terminal
+  --follow, -f              follow the current backup log (like docker logs -f)
 
 Exit codes:
   0  all profiles succeeded
@@ -53,7 +60,16 @@ EOF
         --no-validate) SKIP_VALIDATION=true; shift ;;
         --progress) SHOW_PROGRESS=true; shift ;;
         --follow|-f) TAIL_LOG=true; shift ;;
-        *)          TARGET="$1"; shift ;;
+        *)
+            if [[ " $ACTIONS " == *" $1 "* ]] && [[ "$ACTION_SET" == false ]]; then
+                ACTION="$1"
+                ACTION_SET=true
+                shift
+            else
+                TARGET="$1"
+                shift
+            fi
+            ;;
     esac
 done
 
@@ -67,7 +83,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     exit 1
 fi
 
-if [[ "$TAIL_LOG" == true ]]; then
+if [[ "$TAIL_LOG" == true ]] || [[ "$ACTION" == "logs" ]]; then
     get_log_dir
     mkdir -p "$LOG_DIR"
     exec tail -F "$LOG_DIR/backup-current.log"
@@ -96,15 +112,49 @@ if [[ "$SKIP_VALIDATION" == false ]]; then
     validate_config || exit 1
 fi
 
-HEALTHCHECK_URL="${HEALTHCHECKS_URL:-$(conf '.global.healthchecks_url // empty')}"
-trap on_exit EXIT
-
-setup_logging
-
 AVAILABLE_PROFILES=()
 while IFS= read -r p; do
     AVAILABLE_PROFILES+=("$p")
 done < <(get_profiles)
+
+if [[ "$ACTION" == "snapshots" ]]; then
+    if [[ -z "$TARGET" ]]; then
+        err "Usage: backrest snapshots <profile>"
+        err "Profiles: ${AVAILABLE_PROFILES[*]}"
+        exit 1
+    fi
+    found=false
+    for p in "${AVAILABLE_PROFILES[@]}"; do
+        [[ "$p" == "$TARGET" ]] && found=true && break
+    done
+    if [[ "$found" == false ]]; then
+        err "Unknown profile: $TARGET"
+        err "Available: ${AVAILABLE_PROFILES[*]}"
+        exit 1
+    fi
+    ptype="$(profile_val "$TARGET" type)"
+    if [[ "$ptype" != "restic" && "$ptype" != "sqlite" ]]; then
+        err "[$TARGET] snapshots only works for restic/sqlite profiles (type: $ptype)"
+        exit 1
+    fi
+    repo="$(profile_val "$TARGET" repo)"
+    if ! command -v restic &>/dev/null; then
+        err "restic not found. Install: https://restic.net"
+        exit 1
+    fi
+    resolve_restic_auth || exit 1
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "DRY-RUN [$TARGET] restic snapshots -r $repo"
+        exit 0
+    fi
+    restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" snapshots
+    exit $?
+fi
+
+HEALTHCHECK_URL="${HEALTHCHECKS_URL:-$(conf '.global.healthchecks_url // empty')}"
+trap on_exit EXIT
+
+setup_logging
 
 ENABLED_PROFILES=()
 while IFS= read -r p; do

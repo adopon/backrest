@@ -17,7 +17,9 @@ Guidance for AI agents working in this repo.
 
 ```bash
 ./backrest                       # run all enabled profiles
-./backrest <profile>             # run a single profile
+./backrest run <profile>         # run a single profile
+./backrest snapshots <profile>   # list restic snapshots for a restic/sqlite profile
+./backrest logs                  # follow current backup log (like docker logs -f)
 ./backrest --dry-run             # print what would run, do nothing
 ./backrest --validate            # validate config against schema, exit
 ./backrest --no-validate         # skip config schema validation
@@ -28,6 +30,8 @@ Guidance for AI agents working in this repo.
 ```
 
 Exit codes: `0` all ok, `1` a profile failed, `2` is used internally for "skipped" (not a process exit).
+
+A bare profile name is shorthand for `run <profile>` (backward compat). Auxiliary actions (`snapshots`, `logs`) skip `setup_logging`; they must not touch `$LOG_FILE` (`lib.sh` defaults it to `/dev/null` so `err`/`info` are safe anywhere).
 
 ## Config structure
 
@@ -89,3 +93,4 @@ If no method applies and a restic/sqlite profile is being run, backrest errors o
 - `sqlite` backups use restic `--stdin` with `--stdin-filename "$src"` so snapshot paths show the real source location (not a temp dir). Exception: restic 0.18.0 has a bug (#5324) where `--stdin-filename` with a directory path fails, so `restic_stdin_filename()` falls back to just the basename for that exact version.
 - `check-jsonschema` requires the schema file; install via `uv tool install check-jsonschema` (preferred — no system Python needed; get `uv` itself via `curl -LsSf https://astral.sh/uv/install.sh | sh`), `pip install check-jsonschema`, or the apt package `python3-check-jsonschema` on Debian trixie+/Ubuntu 24.04+. Config validation can be skipped entirely with `--no-validate`.
 - Hooks: optional `prehook`/`posthook` executable scripts per profile; they source `hooks/.env` for secrets (gitignored).
+- Shell completion: `completions/` mirrors the svcsh layout (`backrest.bash` shared bash/zsh via bashcompinit, `backrest.zsh` wrapper, `completions/fish/backrest.fish` with `@REPO_DIR@` substitution) and reads profile names live from `backup.json` via `jq` (set `BACKREST_CONFIG` to override). `install.sh` wires it into `~/.bashrc` / `~/.zshrc` / fish config with a managed marker block; `--remove` undoes it. New actions/options must be added to the completion word lists and `ACTIONS` in `backrest`.

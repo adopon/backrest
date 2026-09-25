@@ -5,6 +5,7 @@
 set -euo pipefail
 
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/backup.json}"
+LOG_FILE="${LOG_FILE:-/dev/null}"
 
 if ! command -v jq &>/dev/null; then
     echo "Error: jq is required. Install: sudo apt install jq" >&2
