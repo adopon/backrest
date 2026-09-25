@@ -170,11 +170,13 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 
 The first positional argument may be an action (`run`, `snapshots`, `logs`); a bare profile name is treated as `run <profile>` for backwards compatibility.
 
+The config file is resolved in this order: `--config PATH` (explicit), `$BACKREST_CONFIG`, `backup.json` next to the script, then the single `backup*.json` (e.g. `backup-laptop.json`; `backup.example.json`/`backup.schema.json` excluded) so per-machine configs work without `--config`. If several `backup*.json` files exist, backrest refuses to guess and asks for `BACKREST_CONFIG` or `--config` — point `BACKREST_CONFIG` at the right one in your shell config per machine.
+
 Each run's log is written to `log_dir/backup-<timestamp>.log`; `backup-current.log` is a symlink to the most recent one. `./backrest logs` tails it and follows across runs (`tail -F`).
 
 ### Shell completion
 
-Tab-completion for bash, zsh, and fish, with profile names derived live from `backup.json` (the `snapshots` action only completes restic/sqlite profiles). Install once with:
+Tab-completion for bash, zsh, and fish, with profile names derived live from the config (the `snapshots` action only completes restic/sqlite profiles). The completion resolves the config the same way the script does: `--config` on the command line, `$BACKREST_CONFIG`, `backup.json`, then the first `backup*.json`. After `--config`, it completes config file paths. Install once with:
 
 ```bash
 ./install.sh              # detect shell and install

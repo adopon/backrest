@@ -10,7 +10,7 @@ Guidance for AI agents working in this repo.
 
 - Executable: `./backrest` (a bash script, no extension by design — it is a command, not a library)
 - Library (sourced by `backrest`): `lib.sh` — all backup functions, logging, helpers live here
-- Config: `backup.json` (gitignored; template is `backup.example.json`)
+- Config: `backup.json` (gitignored; template is `backup.example.json`). Resolution: `--config PATH` → `$BACKREST_CONFIG` → `backup.json` → the single `backup*.json` (e.g. `backup-laptop.json`; example/schema excluded). Multiple `backup*.json` candidates error out — never guess.
 - Schema: `backup.schema.json` (used for validation + editor autocomplete)
 
 ## Commands
@@ -93,4 +93,4 @@ If no method applies and a restic/sqlite profile is being run, backrest errors o
 - `sqlite` backups use restic `--stdin` with `--stdin-filename "$src"` so snapshot paths show the real source location (not a temp dir). Exception: restic 0.18.0 has a bug (#5324) where `--stdin-filename` with a directory path fails, so `restic_stdin_filename()` falls back to just the basename for that exact version.
 - `check-jsonschema` requires the schema file; install via `uv tool install check-jsonschema` (preferred — no system Python needed; get `uv` itself via `curl -LsSf https://astral.sh/uv/install.sh | sh`), `pip install check-jsonschema`, or the apt package `python3-check-jsonschema` on Debian trixie+/Ubuntu 24.04+. Config validation can be skipped entirely with `--no-validate`.
 - Hooks: optional `prehook`/`posthook` executable scripts per profile; they source `hooks/.env` for secrets (gitignored).
-- Shell completion: `completions/` mirrors the svcsh layout (`backrest.bash` shared bash/zsh via bashcompinit, `backrest.zsh` wrapper, `completions/fish/backrest.fish` with `@REPO_DIR@` substitution) and reads profile names live from `backup.json` via `jq` (set `BACKREST_CONFIG` to override). `install.sh` wires it into `~/.bashrc` / `~/.zshrc` / fish config with a managed marker block; `--remove` undoes it. New actions/options must be added to the completion word lists and `ACTIONS` in `backrest`.
+- Shell completion: `completions/` mirrors the svcsh layout (`backrest.bash` shared bash/zsh via bashcompinit, `backrest.zsh` wrapper, `completions/fish/backrest.fish` with `@REPO_DIR@` substitution) and resolves the config like the script: `--config` from the command line → `$BACKREST_CONFIG` → `backup.json` → single `backup*.json` (ambiguous → no profiles). `install.sh` wires it into `~/.bashrc` / `~/.zshrc` / fish config with a managed marker block; `--remove` undoes it. New actions/options must be added to the completion word lists and `ACTIONS` in `backrest`.

@@ -24,6 +24,7 @@ VALIDATE_ONLY=false
 SHOW_PROGRESS=false
 SKIP_VALIDATION=false
 TAIL_LOG=false
+CONFIG_EXPLICIT=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -44,7 +45,8 @@ Options:
   --dry-run                 show what would be done without running
   --validate                validate config and exit
   --no-validate             skip config schema validation
-  --config PATH             use a different config file (default: ./backup.json)
+  --config PATH             use a different config file (default: backup.json,
+                            else the first backup*.json in the repo)
   --progress                show rsync progress in terminal
   --follow, -f              follow the current backup log (like docker logs -f)
 
@@ -55,7 +57,7 @@ EOF
             exit 0
             ;;
         --dry-run) DRY_RUN=true; shift ;;
-        --config)  CONFIG_FILE="$2"; shift 2 ;;
+        --config)  CONFIG_FILE="$2"; CONFIG_EXPLICIT=true; shift 2 ;;
         --validate) VALIDATE_ONLY=true; shift ;;
         --no-validate) SKIP_VALIDATION=true; shift ;;
         --progress) SHOW_PROGRESS=true; shift ;;
@@ -78,8 +80,38 @@ export SHOW_PROGRESS
 # shellcheck source=./lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
+# Config resolution (unless --config was passed):
+#   1. $BACKREST_CONFIG
+#   2. backup.json
+#   3. exactly one backup*.json (e.g. backup-laptop.json); multiple candidates
+#      is an error — never guess which machine config to use.
+if [[ "$CONFIG_EXPLICIT" == false ]]; then
+    if [[ -n "${BACKREST_CONFIG:-}" ]]; then
+        CONFIG_FILE="$BACKREST_CONFIG"
+    elif [[ ! -f "$CONFIG_FILE" ]]; then
+        candidates=()
+        for f in "$SCRIPT_DIR"/backup-*.json "$SCRIPT_DIR"/backup*.json; do
+            [[ -f "$f" ]] || continue
+            case "$f" in
+                *example*|*schema*) continue ;;
+            esac
+            [[ " ${candidates[*]} " == *" $f "* ]] && continue
+            candidates+=("$f")
+        done
+        if [[ ${#candidates[@]} -eq 1 ]]; then
+            CONFIG_FILE="${candidates[0]}"
+        elif [[ ${#candidates[@]} -gt 1 ]]; then
+            echo "Error: multiple config files found:" >&2
+            printf '  %s\n' "${candidates[@]}" >&2
+            echo "  Set BACKREST_CONFIG or pass --config PATH to pick one" >&2
+            exit 1
+        fi
+    fi
+fi
+
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "Error: Config file not found: $CONFIG_FILE" >&2
+    echo "  Set one up (see backup.example.json), BACKREST_CONFIG, or pass --config PATH" >&2
     exit 1
 fi
 
