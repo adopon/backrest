@@ -10,6 +10,7 @@ Guidance for AI agents working in this repo.
 
 - Executable: `./backrest` (a bash script, no extension by design — it is a command, not a library)
 - Library (sourced by `backrest`): `lib.sh` — all backup functions, logging, helpers live here
+- `bootstrap.sh` — disaster-recovery helper that also sources `lib.sh` (`check`, `list`, `restore <profile>`); pairs with `RESTORE.md`. Restores a snapshot into a target dir (non-destructive) reusing backrest's config + restic auth. Takes no `--config`; resolves via `BACKREST_CONFIG` or sibling `backup.json`.
 - Config: `backup.json` (gitignored; template is `backup.example.json`). Resolution: `--config PATH` → `$BACKREST_CONFIG` → `backup.json` → the single `backup*.json` (e.g. `backup-laptop.json`; example/schema excluded). Multiple `backup*.json` candidates error out — never guess.
 - Schema: `backup.schema.json` (used for validation + editor autocomplete)
 
@@ -85,7 +86,7 @@ If no method applies and a restic/sqlite profile is being run, backrest errors o
 ./backrest <profile>                          # run one profile
 ```
 
-`bash -n backrest lib.sh` checks syntax. No test suite exists.
+`bash -n backrest lib.sh bootstrap.sh` checks syntax. No test suite exists.
 
 ## Conventions & gotchas
 

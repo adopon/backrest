@@ -241,6 +241,20 @@ Then set `restic_password_file` in `global`.
 
 Or set `"restic_password_autogen": true` in `global` and backrest generates the password into `~/.config/backrest/restic-password` on first run (reusing it on later runs). Note: existing restic repos can only be decrypted with the password they were created with, so don't switch methods on an existing repo.
 
+Keep an **off-host copy** of that password: it is the one secret no repo can contain (reading a repo needs it), so without it every snapshot is unreadable.
+
+## Disaster recovery
+
+`backrest` only protects what git cannot — the git-ignored instance config and the data. To rebuild a host, restore the tracked code from git and everything else from the restic repos. `bootstrap.sh` reads the same `backup.json` and restic auth as backrest so recovery doesn't depend on remembering paths:
+
+```bash
+./bootstrap.sh check                                  # tools + auth + repo status
+./bootstrap.sh restore <profile> --target DIR         # latest snapshot into DIR (non-destructive)
+./bootstrap.sh restore <profile> --snapshot <id>      # a specific point in time
+```
+
+The full rebuild order (base OS, git clones, password placement, config then data, verification) is in [RESTORE.md](RESTORE.md).
+
 ## Healthchecks.io
 
 Set `healthchecks_url` in `global` to your check URL. backrest pings:
