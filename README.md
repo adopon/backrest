@@ -113,11 +113,14 @@ A mirror sync to a cloud bucket via `rclone sync`. The destination uses an rclon
 "photos-cloud": {
   "type": "s3",
   "src": "${fast}/media/photos",
-  "dest": "backup-bucket:backups/photos"
+  "dest": "backup-bucket:backups/photos",
+  "exclude": ["thumbs/", "*.tmp"]
 }
 ```
 
 Note: `rclone sync` mirrors the source — files removed locally are deleted remotely.
+
+`exclude` works here too (passed to `rclone --exclude`), as it does for `restic` and `rsync` profiles — useful for skipping caches or transient files.
 
 `flags` lets you pass extra `rclone` options. It's optional: `s3` profiles already default to `--checksum`, which compares files by checksum (ETag/SHA1) instead of size+mtime. Without a checksum comparison, rclone decides what to sync by size and modification time, so cloud-to-cloud syncs (e.g. MinIO→B2, or S3→S3) re-upload unchanged files every run when the destination's stored mtime doesn't exactly match the source's. Set `flags` only to override the default, e.g. `["--size-only"]`.
 
@@ -147,7 +150,7 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 | `dest` | string | (rsync/s3) Local destination directory (rsync) or rclone remote path like `remote:bucket/path` (s3). |
 | `remote_dest` | string | (rsync) Optional second destination, e.g. `user@host:/path`. |
 | `retention` | string | (restic/sqlite) Restic `forget` policy. For sqlite: `keep-last`, `keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`. Defaults to `keep-last 10`. |
-| `exclude` | array | Glob patterns to skip. |
+| `exclude` | array | (restic/rsync/s3) Glob patterns to skip. |
 | `flags` | array | (s3) Extra `rclone` flags. Defaults to `["--checksum"]`; set to override. |
 | `prehook` | string | Script to run before backup (e.g. database dump, stop container). |
 | `posthook` | string | Script to run after backup, even on failure (e.g. restart container). |

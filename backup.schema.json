@@ -109,7 +109,7 @@
         "exclude": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "(restic only) rsync/restic --exclude patterns. Skips matching files/dirs."
+          "description": "(restic/rsync/s3) --exclude patterns passed to restic, rsync, or rclone. Skips matching files/dirs."
         },
         "flags": {
           "type": "array",
