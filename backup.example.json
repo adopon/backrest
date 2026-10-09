@@ -16,7 +16,8 @@
       "type": "restic",
       "src": "${fast}/media/photos",
       "repo": "${storage}/backrest/photos",
-      "retention": "keep-daily 7 keep-weekly 4 keep-monthly 6"
+      "retention": "keep-daily 7 keep-weekly 4 keep-monthly 6",
+      "require_mount": "${storage}"
     },
     "documents": {
       "enabled": true,

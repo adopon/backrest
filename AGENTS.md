@@ -48,10 +48,10 @@ Path interpolation (`${name}`) is applied in `profile_val()` and to `restic_pass
 
 | type | tool | fields | notes |
 |------|------|--------|-------|
-| `restic` | restic | `src`, `repo`, `retention`, `exclude`, `check` | repo auto-initialized on first run |
-| `rsync` | rsync | `src`, `dest`, optional `remote_dest`, `exclude` | local mirror; `remote_dest` = second rsync target |
-| `s3` | rclone | `src`, `dest` (rclone remote path, e.g. `backup-bucket:path`), `exclude` | `rclone sync` — mirrors, deletes removed files |
-| `sqlite` | sqlite3 + restic | `src` (.db file), `repo`, `retention` | consistent `.backup` snapshot streamed to restic via `--stdin` |
+| `restic` | restic | `src`, `repo`, `retention`, `exclude`, `check`, `require_mount` | repo auto-initialized on first run |
+| `rsync` | rsync | `src`, `dest`, optional `remote_dest`, `exclude`, `require_mount` | local mirror; `remote_dest` = second rsync target |
+| `s3` | rclone | `src`, `dest` (rclone remote path, e.g. `backup-bucket:path`), `exclude`, `require_mount` | `rclone sync` — mirrors, deletes removed files |
+| `sqlite` | sqlite3 + restic | `src` (.db file), `repo`, `retention`, `require_mount` | consistent `.backup` snapshot streamed to restic via `--stdin` |
 
 ## Retention semantics
 
@@ -93,4 +93,5 @@ If no method applies and a restic/sqlite profile is being run, backrest errors o
 - `sqlite` backups use restic `--stdin` with `--stdin-filename "$src"` so snapshot paths show the real source location (not a temp dir). Exception: restic 0.18.0 has a bug (#5324) where `--stdin-filename` with a directory path fails, so `restic_stdin_filename()` falls back to just the basename for that exact version.
 - `check-jsonschema` requires the schema file; install via `uv tool install check-jsonschema` (preferred — no system Python needed; get `uv` itself via `curl -LsSf https://astral.sh/uv/install.sh | sh`), `pip install check-jsonschema`, or the apt package `python3-check-jsonschema` on Debian trixie+/Ubuntu 24.04+. Config validation can be skipped entirely with `--no-validate`.
 - Hooks: optional `prehook`/`posthook` executable scripts per profile; they source `hooks/.env` for secrets (gitignored).
+- `require_mount`: optional per-profile path checked by `check_require_mount()` in `lib.sh` at the top of every `backup_*`; if the path is not a mount point the profile refuses to run (rc 1) without touching source/destination. Guards an unmounted backup disk (empty dir) against a fresh restic init or a destructive `rclone sync`. Supports `${path}` placeholders.
 - Shell completion: `completions/` mirrors the svcsh layout (`backrest.bash` shared bash/zsh via bashcompinit, `backrest.zsh` wrapper, `completions/fish/backrest.fish` with `@REPO_DIR@` substitution) and resolves the config like the script: `--config` from the command line → `$BACKREST_CONFIG` → `backup.json` → single `backup*.json` (ambiguous → no profiles). `install.sh` wires it into `~/.bashrc` / `~/.zshrc` / fish config with a managed marker block; `--remove` undoes it. New actions/options must be added to the completion word lists and `ACTIONS` in `backrest`.

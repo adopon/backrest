@@ -239,6 +239,12 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
 
     if [[ "$DRY_RUN" == true ]]; then
         src="$(profile_val "$profile" src)"
+        if [[ "$(profile_has "$profile" "require_mount")" == "true" ]]; then
+            req_mount="$(profile_val "$profile" require_mount)"
+            if [[ -n "$req_mount" ]] && ! is_mounted "$req_mount"; then
+                echo "DRY-RUN [$profile] WARNING: require_mount '$req_mount' is not mounted — run would be refused"
+            fi
+        fi
         case "$ptype" in
             restic) repo="$(profile_val "$profile" repo)"
                     check="$(profile_val "$profile" check)"; [[ -z "$check" ]] && check="$(conf '.global.check // "full"')"

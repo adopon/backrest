@@ -103,6 +103,23 @@ check_source() {
     return 0
 }
 
+# A profile may declare `require_mount`: a path that must be a mount point
+# before the profile runs. Guards against destructive operations (rclone sync,
+# restic prune) hitting an unmounted directory — a failed mount leaves an empty
+# dir behind, and a sync would then mirror that emptiness over the backup.
+check_require_mount() {
+    local profile="$1"
+    [[ "$(profile_has "$profile" "require_mount")" == "true" ]] || return 0
+    local path
+    path="$(profile_val "$profile" require_mount)"
+    [[ -n "$path" ]] || return 0
+    if ! is_mounted "$path"; then
+        err "[$profile] require_mount: '$path' is not a mount point — refusing to run"
+        return 1
+    fi
+    return 0
+}
+
 check_dest_parent() {
     local dest="$1"
     [[ "$dest" == *":"* ]] && return 0
@@ -333,6 +350,7 @@ backup_restic() {
     retention="$(profile_val "$profile" retention)"
     retention="${retention:-keep-last 10}"
 
+    check_require_mount "$profile" || return 1
     check_source "$src" || return 2
     ensure_dir "$repo" || return 1
 
@@ -357,6 +375,7 @@ backup_rsync() {
     src="$(profile_val "$profile" src)"
     dest="$(profile_val "$profile" dest)"
 
+    check_require_mount "$profile" || return 1
     check_source "$src" || return 2
     check_dest_parent "$dest" || return 2
     ensure_dir "$dest" || return 1
@@ -428,6 +447,8 @@ backup_s3() {
     src="$(profile_val "$profile" src)"
     dest="$(profile_val "$profile" dest)"
 
+    check_require_mount "$profile" || return 1
+
     if ! command -v rclone &>/dev/null; then
         err "[$profile] rclone not found. Install: sudo apt install rclone"
         return 1
@@ -469,6 +490,8 @@ backup_sqlite() {
     repo="$(profile_val "$profile" repo)"
     retention="$(profile_val "$profile" retention)"
     retention="${retention:-keep-last 10}"
+
+    check_require_mount "$profile" || return 1
 
     if ! command -v sqlite3 &>/dev/null; then
         err "[$profile] sqlite3 not found. Install: sudo apt install sqlite3"

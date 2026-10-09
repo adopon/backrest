@@ -101,6 +101,11 @@
           "minLength": 1,
           "description": "(rsync only) Optional second rsync destination, e.g. user@host:/path for off-site copies."
         },
+        "require_mount": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional path that must be a mount point before the profile runs. If it is not mounted, the profile refuses to run (fails) without touching the source or destination — guards against an rclone sync or restic prune hitting an unmounted directory (a failed mount leaves an empty dir behind). Supports ${path} placeholders."
+        },
         "retention": {
           "type": "string",
           "minLength": 1,
