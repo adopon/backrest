@@ -7,6 +7,55 @@ set -euo pipefail
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/backup.json}"
 LOG_FILE="${LOG_FILE:-/dev/null}"
 
+# Resolve the config file. Precedence:
+#   1. explicit path (CLI --config)
+#   2. $BACKREST_CONFIG
+#   3. $XDG_CONFIG_HOME/backrest/backup.json (default ~/.config/backrest/)
+#   4. backup.json next to the script (legacy)
+#   5. the single backup*.json next to the script
+# Prints the path; returns 1 when none is found, 2 when ambiguous.
+resolve_config_file() {
+    local explicit="${1:-}" xdg f
+    local -a candidates=()
+
+    if [[ -n "$explicit" ]]; then
+        printf '%s\n' "$explicit"
+        return 0
+    fi
+    if [[ -n "${BACKREST_CONFIG:-}" ]]; then
+        printf '%s\n' "$BACKREST_CONFIG"
+        return 0
+    fi
+    xdg="${XDG_CONFIG_HOME:-$HOME/.config}/backrest/backup.json"
+    if [[ -f "$xdg" ]]; then
+        printf '%s\n' "$xdg"
+        return 0
+    fi
+    if [[ -f "$SCRIPT_DIR/backup.json" ]]; then
+        printf '%s\n' "$SCRIPT_DIR/backup.json"
+        return 0
+    fi
+    for f in "$SCRIPT_DIR"/backup-*.json "$SCRIPT_DIR"/backup*.json; do
+        [[ -f "$f" ]] || continue
+        case "$f" in
+            *example*|*schema*) continue ;;
+        esac
+        [[ " ${candidates[*]-} " == *" $f "* ]] && continue
+        candidates+=("$f")
+    done
+    if [[ ${#candidates[@]} -eq 1 ]]; then
+        printf '%s\n' "${candidates[0]}"
+        return 0
+    fi
+    if [[ ${#candidates[@]} -gt 1 ]]; then
+        echo "Error: multiple config files found:" >&2
+        printf '  %s\n' "${candidates[@]}" >&2
+        echo "  Set BACKREST_CONFIG or pass --config PATH to pick one" >&2
+        return 2
+    fi
+    return 1
+}
+
 if ! command -v jq &>/dev/null; then
     echo "Error: jq is required. Install: sudo apt install jq" >&2
     exit 1
@@ -149,7 +198,12 @@ load_env_file() {
 }
 
 load_hook_env() {
-    load_env_file "$SCRIPT_DIR/hooks/.env"
+    local env_file
+    # Instance hooks live next to the config; fall back to the checkout's
+    # legacy hooks/ directory for older layouts.
+    env_file="$(dirname "$CONFIG_FILE")/hooks/.env"
+    [[ -f "$env_file" ]] || env_file="$SCRIPT_DIR/hooks/.env"
+    load_env_file "$env_file"
 }
 
 run_hook() {

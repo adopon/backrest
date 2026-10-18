@@ -3,8 +3,8 @@
   "log_dir": "$HOME/.local/log/backrest",
   "log_retention_days": 30,
   "paths": {
-    "fast": "/mnt/cloud-drive",
-    "storage": "/mnt/backup-drive",
+    "fast": "/mnt/ssd",
+    "storage": "/mnt/hdd",
     "home": "/home/youruser"
   },
   "global": {

@@ -23,7 +23,7 @@
     },
     "paths": {
       "type": "object",
-      "description": "Named path placeholders. Values are substituted for ${name} references anywhere in the config (e.g. \"storage\": \"/mnt/drive\" makes ${storage}/restic/x valid).",
+      "description": "Named path placeholders. Values are substituted for ${name} references anywhere in the config (e.g. \"storage\": \"/mnt/hdd\" makes ${storage}/restic/x valid).",
       "additionalProperties": { "type": "string", "minLength": 1 }
     },
     "global": {

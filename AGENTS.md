@@ -10,8 +10,8 @@ Guidance for AI agents working in this repo.
 
 - Executable: `./backrest` (a bash script, no extension by design — it is a command, not a library)
 - Library (sourced by `backrest`): `lib.sh` — all backup functions, logging, helpers live here
-- `bootstrap.sh` — disaster-recovery helper that also sources `lib.sh` (`check`, `list`, `restore <profile>`); pairs with `RESTORE.md`. Restores a snapshot into a target dir (non-destructive) reusing backrest's config + restic auth. Takes no `--config`; resolves via `BACKREST_CONFIG` or sibling `backup.json`.
-- Config: `backup.json` (gitignored; template is `backup.example.json`). Resolution: `--config PATH` → `$BACKREST_CONFIG` → `backup.json` → the single `backup*.json` (e.g. `backup-laptop.json`; example/schema excluded). Multiple `backup*.json` candidates error out — never guess.
+- `bootstrap.sh` — disaster-recovery helper that also sources `lib.sh` (`check`, `list`, `restore <profile>`); pairs with `RESTORE.md`. Restores a snapshot into a target dir (non-destructive) reusing backrest's config + restic auth. Takes no `--config`; resolves via `$BACKREST_CONFIG`, `~/.config/backrest/backup.json`, or a sibling `backup.json`.
+- Config: instance config lives at `~/.config/backrest/backup.json` (XDG-aware; template is `backup.example.json`). Resolution: `--config PATH` → `$BACKREST_CONFIG` → `~/.config/backrest/backup.json` → `backup.json` → the single `backup*.json` (e.g. `backup-laptop.json`; example/schema excluded). Multiple `backup*.json` candidates error out — never guess.
 - Schema: `backup.schema.json` (used for validation + editor autocomplete)
 
 ## Commands
@@ -36,7 +36,7 @@ A bare profile name is shorthand for `run <profile>` (backward compat). Auxiliar
 
 ## Config structure
 
-`backup.json` has four sections:
+The instance `backup.json` has four sections:
 
 - `paths` — named placeholders substituted anywhere via `${name}`
 - `global` — shared settings: restic auth, default `check` mode, `healthchecks_url`
@@ -93,6 +93,6 @@ If no method applies and a restic/sqlite profile is being run, backrest errors o
 - Bash with `set -euo pipefail`. All functions in `lib.sh`. New backup types need: a `backup_*` function in `lib.sh`, a dispatch + dry-run case in `backrest`, an enum entry + conditional `required` in `backup.schema.json`, README + example updates.
 - `sqlite` backups use restic `--stdin` with `--stdin-filename "$src"` so snapshot paths show the real source location (not a temp dir). Exception: restic 0.18.0 has a bug (#5324) where `--stdin-filename` with a directory path fails, so `restic_stdin_filename()` falls back to just the basename for that exact version.
 - `check-jsonschema` requires the schema file; install via `uv tool install check-jsonschema` (preferred — no system Python needed; get `uv` itself via `curl -LsSf https://astral.sh/uv/install.sh | sh`), `pip install check-jsonschema`, or the apt package `python3-check-jsonschema` on Debian trixie+/Ubuntu 24.04+. Config validation can be skipped entirely with `--no-validate`.
-- Hooks: optional `prehook`/`posthook` executable scripts per profile; they source `hooks/.env` for secrets (gitignored).
+- Hooks: optional `prehook`/`posthook` executable scripts per profile; they source `~/.config/backrest/hooks/.env` for secrets (gitignored), with the checkout's legacy `hooks/.env` as fallback.
 - `require_mount`: optional per-profile path checked by `check_require_mount()` in `lib.sh` at the top of every `backup_*`; if the path is not a mount point the profile refuses to run (rc 1) without touching source/destination. Guards an unmounted backup disk (empty dir) against a fresh restic init or a destructive `rclone sync`. Supports `${path}` placeholders.
-- Shell completion: `completions/` mirrors the svcsh layout (`backrest.bash` shared bash/zsh via bashcompinit, `backrest.zsh` wrapper, `completions/fish/backrest.fish` with `@REPO_DIR@` substitution) and resolves the config like the script: `--config` from the command line → `$BACKREST_CONFIG` → `backup.json` → single `backup*.json` (ambiguous → no profiles). `install.sh` wires it into `~/.bashrc` / `~/.zshrc` / fish config with a managed marker block; `--remove` undoes it. New actions/options must be added to the completion word lists and `ACTIONS` in `backrest`.
+- Shell completion: `completions/` mirrors the svcsh layout (`backrest.bash` shared bash/zsh via bashcompinit, `backrest.zsh` wrapper, `completions/fish/backrest.fish` with `@REPO_DIR@` substitution) and resolves the config like the script: `--config` from the command line → `$BACKREST_CONFIG` → `~/.config/backrest/backup.json` → `backup.json` → single `backup*.json` (ambiguous → no profiles). `install.sh` wires it into `~/.bashrc` / `~/.zshrc` / fish config with a managed marker block; `--remove` undoes it. New actions/options must be added to the completion word lists and `ACTIONS` in `backrest`.

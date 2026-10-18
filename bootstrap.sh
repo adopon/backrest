@@ -3,10 +3,11 @@
 # bootstrap.sh — disaster-recovery companion to backrest.
 #
 # backrest only protects what git cannot: the git-ignored instance config
-# (svcsh's global.env/ports.env/stacks, backrest's backup.json/hooks/.env) and
-# the data. Tracked code comes from git — clone the repos. Everything else lives
-# in the restic repos, and this script reads the same config + restic auth as
-# backrest so recovery never depends on remembering paths.
+# (svcsh's global.env/ports.env/stacks, backrest's
+# ~/.config/backrest/{backup.json,hooks/.env}) and the data. Tracked code comes
+# from git — clone the repos. Everything else lives in the restic repos, and
+# this script reads the same config + restic auth as backrest so recovery never
+# depends on remembering paths.
 #
 # Full rebuild order: see RESTORE.md.
 #
@@ -18,10 +19,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${BACKREST_CONFIG:-$SCRIPT_DIR/backup.json}"
 
 # shellcheck source=./lib.sh
 source "$SCRIPT_DIR/lib.sh"
+
+config_rc=0
+CONFIG_FILE="$(resolve_config_file)" || config_rc=$?
+if [[ "$config_rc" -eq 1 ]]; then
+    echo "Error: Config file not found." >&2
+    echo "  Put it at ${XDG_CONFIG_HOME:-$HOME/.config}/backrest/backup.json," >&2
+    echo "  or set BACKREST_CONFIG." >&2
+    exit 1
+elif [[ "$config_rc" -ne 0 ]]; then
+    exit 1
+fi
 
 usage() {
     cat <<'EOF'
@@ -44,8 +55,8 @@ Options:
   --include PATH         Only restore this path from the snapshot (repeatable)
   -h, --help
 
-Config is resolved like backrest: --config is not accepted here, use
-BACKREST_CONFIG or the sibling backup.json.
+Config is resolved like backrest (without --config): $BACKREST_CONFIG,
+~/.config/backrest/backup.json, or the sibling backup.json.
 
 See RESTORE.md for the full rebuild order.
 EOF

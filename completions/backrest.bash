@@ -4,8 +4,9 @@
 # Profiles are derived live from the config — resolution order:
 #   1. --config on the command line
 #   2. $BACKREST_CONFIG
-#   3. backup.json next to the script
-#   4. the only backup*.json (e.g. backup-laptop.json; example/schema
+#   3. ~/.config/backrest/backup.json ($XDG_CONFIG_HOME respected)
+#   4. backup.json next to the script
+#   5. the only backup*.json (e.g. backup-laptop.json; example/schema
 #      excluded). Multiple candidates -> no profiles (ambiguous).
 
 if [ -n "${ZSH_VERSION:-}" ]; then
@@ -25,6 +26,11 @@ _backrest_config() {
     done
     if [[ -n "${BACKREST_CONFIG:-}" ]]; then
         printf '%s\n' "$BACKREST_CONFIG"
+        return 0
+    fi
+    local xdg="${XDG_CONFIG_HOME:-$HOME/.config}/backrest/backup.json"
+    if [[ -f "$xdg" ]]; then
+        printf '%s\n' "$xdg"
         return 0
     fi
     if [[ -f "$_backrest_dir/backup.json" ]]; then

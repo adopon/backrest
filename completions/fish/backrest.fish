@@ -4,8 +4,9 @@
 # Profiles are derived live from the config — resolution order:
 #   1. --config on the command line
 #   2. $BACKREST_CONFIG
-#   3. backup.json next to the script
-#   4. the only backup*.json (e.g. backup-laptop.json; example/schema
+#   3. ~/.config/backrest/backup.json (XDG_CONFIG_HOME respected)
+#   4. backup.json next to the script
+#   5. the only backup*.json (e.g. backup-laptop.json; example/schema
 #      excluded). Multiple candidates -> no profiles (ambiguous).
 
 set -g __backrest_dir '@REPO_DIR@'
@@ -24,18 +25,26 @@ function __backrest_config
     end
     if set -q BACKREST_CONFIG
         echo $BACKREST_CONFIG
-    else if test -f $__backrest_dir/backup.json
-        echo $__backrest_dir/backup.json
     else
-        set -l found
-        for f in $__backrest_dir/backup-*.json $__backrest_dir/backup*.json
-            test -f $f; or continue
-            string match -q '*example*' $f; and continue
-            string match -q '*schema*' $f; and continue
-            contains -- $f $found; and continue
-            set found $found $f
+        set -l xdg_config "$HOME/.config/backrest/backup.json"
+        if set -q XDG_CONFIG_HOME
+            set xdg_config "$XDG_CONFIG_HOME/backrest/backup.json"
         end
-        test (count $found) -eq 1; and echo $found
+        if test -f "$xdg_config"
+            echo "$xdg_config"
+        else if test -f $__backrest_dir/backup.json
+            echo $__backrest_dir/backup.json
+        else
+            set -l found
+            for f in $__backrest_dir/backup-*.json $__backrest_dir/backup*.json
+                test -f $f; or continue
+                string match -q '*example*' $f; and continue
+                string match -q '*schema*' $f; and continue
+                contains -- $f $found; and continue
+                set found $found $f
+            end
+            test (count $found) -eq 1; and echo $found
+        end
     end
 end
 

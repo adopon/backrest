@@ -16,7 +16,7 @@ repos.
 |-------|-----------------|--------------|
 | dotfiles, scripts, svcsh/backrest code | git remotes | `git clone` |
 | svcsh `global.env`, `ports.env`, `stacks/**` (compose + `.env`) | restic repo | `bootstrap.sh restore` |
-| backrest `backup.json`, `hooks/.env` | restic repo | `bootstrap.sh restore` |
+| backrest `~/.config/backrest/{backup.json,hooks/.env,hooks/*.sh}` | restic repo | `bootstrap.sh restore` |
 | rclone remotes (`~/.config/rclone/rclone.conf`) | restic repo **or** password manager | restore / paste |
 | restic password | **off-host, never in a repo** | password manager / print |
 | service data (uploads, DBs) | restic per-service repos | `bootstrap.sh restore` |
@@ -49,15 +49,16 @@ consistent set of svcsh + backrest config at one timestamp.
 4. **Check what's recoverable** before touching anything:
    ```sh
    cd ~/scripts/backrest
-   BACKREST_CONFIG=... ./bootstrap.sh check   # tools, auth, per-profile repo status
+   ./bootstrap.sh check   # tools, auth, per-profile repo status
+   # Config resolves from ~/.config/backrest/backup.json (or BACKREST_CONFIG).
    ```
 
 5. **Restore the config snapshots** (find exact profile names in your `backup.json`):
    ```sh
    ./bootstrap.sh restore configs --target /tmp/restore/configs
    # then copy the pieces back to where svcsh/backrest expect them:
-   #   /tmp/restore/configs/.../svcsh/{global.env,ports.env,stacks/} -> ~/scripts/svcsh/
-   #   /tmp/restore/configs/.../backrest/{backup.json,hooks/.env}     -> ~/scripts/backrest/
+   #   /tmp/restore/configs/.../svcsh/{global.env,ports.env,stacks/}    -> ~/.config/svcsh/
+   #   /tmp/restore/configs/.../backrest/{backup.json,hooks/}            -> ~/.config/backrest/
    ```
    Restore is **non-destructive** — it writes into `--target`, you move files in.
    Verify with `./backrest --validate` and `./backrest --dry-run`.

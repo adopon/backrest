@@ -6,6 +6,10 @@ chmod 600 ~/.config/backrest/restic-password
 
 # This file path is referenced in backup.json:
 #   "restic_password_file": "~/.config/backrest/restic-password"
+#
+# The instance config itself lives at ~/.config/backrest/backup.json; the
+# runner resolves it automatically (or via BACKREST_CONFIG), so the service
+# below needs no --config flag.
 
 
 # ============================================================
@@ -23,6 +27,8 @@ After=network-online.target
 Type=oneshot
 ExecStart=/path/to/backrest
 User=youruser
+# HOME must point at the account that owns ~/.config/backrest.
+# Environment=HOME=/home/youruser
 EOF
 
 # Create timer file

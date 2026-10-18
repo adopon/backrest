@@ -1,6 +1,6 @@
 #!/bin/bash
 # Shell integration for this repo: `backrest` on PATH and tab-completion with
-# profile names derived live from backup.json.
+# profile names derived live from the active config.
 # Idempotent; undo with --remove.
 set -euo pipefail
 
@@ -15,7 +15,7 @@ usage: install.sh [shell] [--remove]
 
 Adds (or removes) a managed block that:
   - puts \`backrest\` on PATH
-  - loads completions for backrest (actions + profile names from backup.json)
+  - loads completions for backrest (actions + profile names from the active config)
 
 Supported shells: bash, zsh, fish (default: detect from \$SHELL).
 

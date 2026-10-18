@@ -31,20 +31,31 @@ source ~/.local/bin/env    # or restart your shell
 ## Quick start
 
 ```bash
-cp backup.example.json backup.json
-# edit backup.json with your paths and profiles
+install -d -m 700 ~/.config/backrest
+cp backup.example.json ~/.config/backrest/backup.json
+# edit ~/.config/backrest/backup.json with your paths and profiles
 ./backrest --validate    # check config syntax
 ./backrest --dry-run     # preview what will run
 ./backrest               # run all enabled profiles
 ```
 
+The instance config lives outside the checkout at
+`~/.config/backrest/backup.json` (XDG-aware), next to the restic password and
+instance hooks. A `backup.json` inside the checkout still works as a legacy
+fallback.
+
 ### Editor autocomplete
 
-`backup.json` contains a `$schema` key pointing to `backup.schema.json`. This gives JSON schema validation and autocomplete in editors with LSP support (e.g. Neovim's jsonls, VSCode). The `$schema` field is ignored by `check-jsonschema`, so it's safe to keep.
+`backup.json` can contain a `$schema` key pointing to `backup.schema.json`. When
+the config lives outside the repo, use the checkout's absolute path, e.g.
+`"$schema": "/home/you/scripts/backrest/backup.schema.json"`. This gives JSON
+schema validation and autocomplete in editors with LSP support (e.g. Neovim's
+jsonls, VSCode). The `$schema` field is ignored by `check-jsonschema`, so it's
+safe to keep.
 
 ## Configuration
 
-`backup.json` has four sections:
+The instance `backup.json` has four sections:
 
 ### `paths`
 
@@ -52,8 +63,8 @@ Named placeholders substituted anywhere with `${name}`:
 
 ```json
 "paths": {
-  "fast": "/mnt/cloud-drive",
-  "storage": "/mnt/backup-drive",
+  "fast": "/mnt/ssd",
+  "storage": "/mnt/hdd",
   "home": "/home/you"
 }
 ```
@@ -178,13 +189,13 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 
 The first positional argument may be an action (`run`, `snapshots`, `logs`); a bare profile name is treated as `run <profile>` for backwards compatibility.
 
-The config file is resolved in this order: `--config PATH` (explicit), `$BACKREST_CONFIG`, `backup.json` next to the script, then the single `backup*.json` (e.g. `backup-laptop.json`; `backup.example.json`/`backup.schema.json` excluded) so per-machine configs work without `--config`. If several `backup*.json` files exist, backrest refuses to guess and asks for `BACKREST_CONFIG` or `--config` — point `BACKREST_CONFIG` at the right one in your shell config per machine.
+The config file is resolved in this order: `--config PATH` (explicit), `$BACKREST_CONFIG`, `$XDG_CONFIG_HOME/backrest/backup.json` (default `~/.config/backrest/backup.json`), `backup.json` next to the script, then the single `backup*.json` (e.g. `backup-laptop.json`; `backup.example.json`/`backup.schema.json` excluded) so per-machine configs work without `--config`. If several `backup*.json` files exist, backrest refuses to guess and asks for `BACKREST_CONFIG` or `--config` — point `BACKREST_CONFIG` at the right one in your shell config per machine.
 
 Each run's log is written to `log_dir/backup-<timestamp>.log`; `backup-current.log` is a symlink to the most recent one. `./backrest logs` tails it and follows across runs (`tail -F`).
 
 ### Shell completion
 
-Tab-completion for bash, zsh, and fish, with profile names derived live from the config (the `snapshots` action only completes restic/sqlite profiles). The completion resolves the config the same way the script does: `--config` on the command line, `$BACKREST_CONFIG`, `backup.json`, then the first `backup*.json`. After `--config`, it completes config file paths. Install once with:
+Tab-completion for bash, zsh, and fish, with profile names derived live from the config (the `snapshots` action only completes restic/sqlite profiles). The completion resolves the config the same way the script does: `--config` on the command line, `$BACKREST_CONFIG`, `~/.config/backrest/backup.json`, `backup.json`, then the first `backup*.json`. After `--config`, it completes config file paths. Install once with:
 
 ```bash
 ./install.sh              # detect shell and install
@@ -196,18 +207,22 @@ This adds `backrest` to `PATH` and sources the completion (block in `~/.bashrc` 
 
 ## Hooks
 
-Pre/post hooks are executable scripts that run around each profile. They source `hooks/.env` for secrets (git-ignored).
+Pre/post hooks are executable scripts that run around each profile. They source
+`~/.config/backrest/hooks/.env` for secrets (git-ignored). The checkout's legacy
+`hooks/.env` is still read as a fallback.
 
-Copy `hooks/.env.example` to `hooks/.env` and fill in real values.
+Copy `hooks/.env.example` to `~/.config/backrest/hooks/.env` and fill in real
+values. Point profile `prehook`/`posthook` paths at
+`${home}/.config/backrest/hooks/...`.
 
 Example pre-hook that dumps a database before backup:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$SCRIPT_DIR/lib.sh"
-load_env_file "$SCRIPT_DIR/hooks/.env"
+BACKREST_HOME="${BACKREST_HOME:-$HOME/scripts/backrest}"
+source "$BACKREST_HOME/lib.sh"
+load_env_file "$HOME/.config/backrest/hooks/.env"
 
 docker exec myapp pg_dump -U postgres > /tmp/backup.sql
 ```
@@ -245,7 +260,7 @@ Keep an **off-host copy** of that password: it is the one secret no repo can con
 
 ## Disaster recovery
 
-`backrest` only protects what git cannot — the git-ignored instance config and the data. To rebuild a host, restore the tracked code from git and everything else from the restic repos. `bootstrap.sh` reads the same `backup.json` and restic auth as backrest so recovery doesn't depend on remembering paths:
+`backrest` only protects what git cannot — the git-ignored instance config and the data. To rebuild a host, restore the tracked code from git and everything else from the restic repos. `bootstrap.sh` reads the same `~/.config/backrest/backup.json` and restic auth as backrest so recovery doesn't depend on remembering paths:
 
 ```bash
 ./bootstrap.sh check                                  # tools + auth + repo status
