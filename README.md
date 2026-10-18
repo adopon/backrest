@@ -48,7 +48,7 @@ fallback.
 
 `backup.json` can contain a `$schema` key pointing to `backup.schema.json`. When
 the config lives outside the repo, use the checkout's absolute path, e.g.
-`"$schema": "/home/you/scripts/backrest/backup.schema.json"`. This gives JSON
+`"$schema": "/home/you/ops/backrest/backup.schema.json"`. This gives JSON
 schema validation and autocomplete in editors with LSP support (e.g. Neovim's
 jsonls, VSCode). The `$schema` field is ignored by `check-jsonschema`, so it's
 safe to keep.
@@ -220,7 +220,7 @@ Example pre-hook that dumps a database before backup:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-BACKREST_HOME="${BACKREST_HOME:-$HOME/scripts/backrest}"
+BACKREST_HOME="${BACKREST_HOME:-$HOME/ops/backrest}"
 source "$BACKREST_HOME/lib.sh"
 load_env_file "$HOME/.config/backrest/hooks/.env"
 

@@ -34,10 +34,10 @@ consistent set of svcsh + backrest config at one timestamp.
    # or: uv tool install check-jsonschema
    ```
 
-2. **Clone the code** (same layout as before, e.g. `~/scripts/`):
+2. **Clone the code** (same layout as before, e.g. `~/ops/`):
    ```sh
-   git clone <svcsh-remote>    ~/scripts/svcsh
-   git clone <backrest-remote> ~/scripts/backrest
+   git clone <svcsh-remote>    ~/ops/svcsh
+   git clone <backrest-remote> ~/ops/backrest
    ```
 
 3. **Place the restic password** (off-host copy) so restore can read the repos:
@@ -48,7 +48,7 @@ consistent set of svcsh + backrest config at one timestamp.
 
 4. **Check what's recoverable** before touching anything:
    ```sh
-   cd ~/scripts/backrest
+   cd ~/ops/backrest
    ./bootstrap.sh check   # tools, auth, per-profile repo status
    # Config resolves from ~/.config/backrest/backup.json (or BACKREST_CONFIG).
    ```
