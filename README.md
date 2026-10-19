@@ -291,20 +291,36 @@ docker exec myapp pg_dump -U postgres > /tmp/backup.sql
 
 Copying a live SQLite file can capture a torn WAL/database state. The tracked
 example `hooks/sqlite-backup.sh.example` (install to
-`~/.config/backrest/hooks/sqlite-backup.sh`, chmod 700) dumps every database
-listed in `~/.config/backrest/sqlite-dbs.conf` (path or glob per line) with
+`~/.config/backrest/hooks/sqlite-backup.sh`, chmod 700) dumps databases with
 SQLite's online backup API — safe while the database is in use, WAL included —
 verifies each dump with `PRAGMA quick_check`, and writes `_status.txt` with an
-ok/skip/FAIL line per database.
+ok/FAIL line per database.
 
-```bash
+`~/.config/backrest/sqlite-dbs.conf` accepts, one per line:
+
+- a **directory** — scanned recursively for `*.db` / `*.sqlite` / `*.sqlite3`
+- a **file or glob**
+- `!pattern` — fnmatch exclusion (e.g. `!*/syncthing/index-v2/*`, `!*.bak*`)
+
+Every candidate is checked against the `SQLite format 3` file header, so
+non-database `.db` files, WAL/SHM files and shelve files are skipped
+automatically. New services are picked up without touching the config.
+
+```
 # ~/.config/backrest/sqlite-dbs.conf
-/mnt/ssd/services/homelab/vaultwarden/db.sqlite3
-/srv/myapp/data/*.db
+/mnt/ssd/services/homelab
+/mnt/ssd/services/web
+!*/syncthing/index-v2/*
+!*/logs.db
+!*.bak*
 ```
 
-Point a small restic profile at the dump directory (dumps mirror the source
-path, e.g. `sqlite-dumps/mnt/ssd/...`):
+`~/.config/backrest/hooks/sqlite-backup.sh --list` prints exactly which
+databases would be dumped. Dumps mirror the source path under
+`~/.local/share/backrest/sqlite-dumps` (e.g. `sqlite-dumps/mnt/ssd/...`).
+
+Point a small restic profile at the dump directory, and mirror it offsite with
+a second profile (same `src`, cloud `repo`, no prehook):
 
 ```json
 "sqlite-dumps": {
@@ -316,7 +332,6 @@ path, e.g. `sqlite-dumps/mnt/ssd/...`):
 }
 ```
 
-Mirror it offsite with a second profile (same `src`, cloud `repo`, no prehook).
 `VACUUM` is a maintenance operation, not a consistency mechanism — `.backup` is
 what makes the copy safe.
 

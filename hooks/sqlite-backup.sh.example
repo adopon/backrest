@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 #
-# Example prehook: consistent snapshots of live SQLite databases using the
-# online backup API (`.backup`), which is safe while a database is in use and
-# includes committed WAL contents. Dumps mirror the source path under
-# SQLITE_DUMP_DIR and are picked up by a small restic profile (see README,
-# "Consistent SQLite snapshots").
+# prehook: consistent snapshots of live SQLite databases using the online
+# backup API (`.backup`), which is safe while a database is in use and
+# includes committed WAL contents.
 #
-# Install to ~/.config/backrest/hooks/sqlite-backup.sh (chmod 700) and list
-# databases, one path or glob per line, in ~/.config/backrest/sqlite-dbs.conf.
-# Overridable via SQLITE_DBS_CONF / SQLITE_DUMP_DIR.
+# Config: ~/.config/backrest/sqlite-dbs.conf (see README). Each line is:
+#   - a directory: scanned recursively for *.db / *.sqlite / *.sqlite3
+#   - a file or glob: used as-is
+#   - !pattern: exclude paths matching the fnmatch pattern
+# Only files whose header is a real SQLite database are dumped, so stray
+# matches (or non-SQLite .db files) are skipped. `sqlite-backup.sh --list`
+# prints the databases that would be dumped, without writing anything.
+#
+# Dumps mirror the source path under SQLITE_DUMP_DIR and are picked up by the
+# sqlite-dumps[-b2] restic profiles. Overridable via SQLITE_DBS_CONF /
+# SQLITE_DUMP_DIR.
 
 set -euo pipefail
 
 CONF="${SQLITE_DBS_CONF:-$HOME/.config/backrest/sqlite-dbs.conf}"
 DUMP_DIR="${SQLITE_DUMP_DIR:-$HOME/.local/share/backrest/sqlite-dumps}"
+LIST_ONLY=false
+[[ "${1:-}" == "--list" ]] && LIST_ONLY=true
 
 if [[ ! -f "$CONF" ]]; then
     echo "sqlite-backup: no DB list at $CONF"
@@ -24,45 +32,92 @@ if ! command -v sqlite3 >/dev/null; then
     exit 1
 fi
 
+# ---- discover --------------------------------------------------------------
+
+entries=() excludes=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ "$line" == \!* ]]; then
+        excludes+=("${line#!}")
+    else
+        entries+=("$line")
+    fi
+done < "$CONF"
+
+declare -A seen=()
+dbs=()
+
+add_candidate() {
+    local f="$1" ex magic=""
+    [[ -f "$f" ]] || return 0
+    for ex in "${excludes[@]}"; do
+        # shellcheck disable=SC2053  # right-hand side is an fnmatch pattern
+        [[ "$f" == $ex ]] && return 0
+    done
+    [[ -n "${seen[$f]:-}" ]] && return 0
+    seen[$f]=1
+    # SQLite files start with "SQLite format 3\0"; this filters WAL/SHM,
+    # non-SQLite .db files, celery shelve files, etc.
+    IFS= read -r -n 15 magic < "$f" 2>/dev/null || true
+    [[ "$magic" == "SQLite format 3" ]] || return 0
+    dbs+=("$f")
+}
+
+for entry in "${entries[@]}"; do
+    if [[ -d "$entry" ]]; then
+        while IFS= read -r f; do
+            add_candidate "$f"
+        done < <(find "$entry" -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \) 2>/dev/null)
+    else
+        # shellcheck disable=SC2206  # glob expansion is intended
+        for f in $entry; do
+            add_candidate "$f"
+        done
+    fi
+done
+
+mapfile -t dbs < <(printf '%s\n' "${dbs[@]}" | sort)
+
+if [[ ${#dbs[@]} -eq 0 ]]; then
+    echo "sqlite-backup: no databases found (check $CONF)"
+    exit 1
+fi
+
+if [[ "$LIST_ONLY" == true ]]; then
+    printf '%s\n' "${dbs[@]}"
+    exit 0
+fi
+
+# ---- dump ------------------------------------------------------------------
+
 rm -rf "$DUMP_DIR"
 mkdir -p "$DUMP_DIR"
 STATUS="$DUMP_DIR/_status.txt"
 : > "$STATUS"
 
-ok=0 fail=0 skip=0
+ok=0 fail=0
 
-while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    [[ -z "$line" || "$line" == \#* ]] && continue
-
-    # shellcheck disable=SC2206  # glob expansion is intended
-    matches=( $line )
-    for db in "${matches[@]}"; do
-        if [[ ! -f "$db" ]]; then
-            echo "skip $db (not found)" | tee -a "$STATUS"
-            skip=$((skip + 1))
-            continue
-        fi
-        dest="$DUMP_DIR$db"
-        mkdir -p "$(dirname "$dest")"
-        if sqlite3 "$db" ".timeout 5000" ".backup '$dest.tmp'" >>"$STATUS" 2>&1 \
-            && mv "$dest.tmp" "$dest"; then
-            if [[ "$(sqlite3 "$dest" "PRAGMA quick_check;" 2>/dev/null)" == "ok" ]]; then
-                echo "ok   $db" >> "$STATUS"
-                ok=$((ok + 1))
-            else
-                echo "FAIL $db (quick_check)" | tee -a "$STATUS"
-                rm -f "$dest"
-                fail=$((fail + 1))
-            fi
+for db in "${dbs[@]}"; do
+    dest="$DUMP_DIR$db"
+    mkdir -p "$(dirname "$dest")"
+    if sqlite3 "$db" ".timeout 5000" ".backup '$dest.tmp'" >>"$STATUS" 2>&1 \
+        && mv "$dest.tmp" "$dest"; then
+        if [[ "$(sqlite3 "$dest" "PRAGMA quick_check;" 2>/dev/null)" == "ok" ]]; then
+            echo "ok   $db" >> "$STATUS"
+            ok=$((ok + 1))
         else
-            echo "FAIL $db (backup error, see log above)" | tee -a "$STATUS"
-            rm -f "$dest.tmp"
+            echo "FAIL $db (quick_check)" | tee -a "$STATUS"
+            rm -f "$dest"
             fail=$((fail + 1))
         fi
-    done
-done < "$CONF"
+    else
+        echo "FAIL $db (backup error, see log above)" | tee -a "$STATUS"
+        rm -f "$dest.tmp"
+        fail=$((fail + 1))
+    fi
+done
 
-echo "sqlite-backup: $ok ok, $skip skipped, $fail failed; dumps in $DUMP_DIR"
+echo "sqlite-backup: $ok ok, $fail failed; discovered ${#dbs[@]}; dumps in $DUMP_DIR"
 [[ $fail -eq 0 ]]
