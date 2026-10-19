@@ -4,17 +4,22 @@
 # backup API (`.backup`), which is safe while a database is in use and
 # includes committed WAL contents.
 #
-# Config: ~/.config/backrest/sqlite-dbs.conf (see README). Each line is:
-#   - a directory: scanned recursively for *.db / *.sqlite / *.sqlite3
-#   - a file or glob: used as-is
-#   - !pattern: exclude paths matching the fnmatch pattern
-# Only files whose header is a real SQLite database are dumped, so stray
-# matches (or non-SQLite .db files) are skipped. `sqlite-backup.sh --list`
-# prints the databases that would be dumped, without writing anything.
-#
-# Dumps mirror the source path under SQLITE_DUMP_DIR and are picked up by the
-# sqlite-dumps[-b2] restic profiles. Overridable via SQLITE_DBS_CONF /
+# This hook only READS live databases. It never writes to them and never
+# stops/starts services, so nothing needs a restart and no live file is
+# touched. Dumps are written inside the tree they belong to, at
+# <root>/_sqlite-dumps/<relative path>, so the regular profile for that tree
+# (e.g. homelab-data, web-data) contains configs and consistent databases in
+# one snapshot. Databases outside any configured root fall back to
 # SQLITE_DUMP_DIR.
+#
+# Config: ~/.config/backrest/sqlite-dbs.conf (see README). Each line is:
+#   - a directory: scanned recursively for *.db / *.sqlite / *.sqlite3; its
+#     dumps go to <dir>/_sqlite-dumps/
+#   - a file or glob: dumped as-is (fallback location)
+#   - !pattern: exclude paths matching the fnmatch pattern
+# Only files whose header is a real SQLite database are dumped. Existing
+# _sqlite-dumps directories are ignored during discovery (never re-dumped).
+# `sqlite-backup.sh --list` prints the databases that would be dumped.
 
 set -euo pipefail
 
@@ -32,9 +37,9 @@ if ! command -v sqlite3 >/dev/null; then
     exit 1
 fi
 
-# ---- discover --------------------------------------------------------------
+# ---- config -----------------------------------------------------------------
 
-entries=() excludes=()
+entries=() roots=() excludes=()
 while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
@@ -43,8 +48,16 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         excludes+=("${line#!}")
     else
         entries+=("$line")
+        [[ -d "$line" ]] && roots+=("$line")
     fi
 done < "$CONF"
+
+# Longest root first so nested mappings pick the most specific root.
+if [[ ${#roots[@]} -gt 1 ]]; then
+    mapfile -t roots < <(printf '%s\n' "${roots[@]}" | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
+fi
+
+# ---- discovery --------------------------------------------------------------
 
 declare -A seen=()
 dbs=()
@@ -52,6 +65,7 @@ dbs=()
 add_candidate() {
     local f="$1" ex magic=""
     [[ -f "$f" ]] || return 0
+    [[ "$f" == */_sqlite-dumps/* ]] && return 0
     for ex in "${excludes[@]}"; do
         # shellcheck disable=SC2053  # right-hand side is an fnmatch pattern
         [[ "$f" == $ex ]] && return 0
@@ -90,23 +104,48 @@ if [[ "$LIST_ONLY" == true ]]; then
     exit 0
 fi
 
-# ---- dump ------------------------------------------------------------------
+# ---- dump -------------------------------------------------------------------
 
+# Dump destination for a database: inside its tree's _sqlite-dumps/ sidecar
+# when it belongs to a configured root, otherwise the fallback staging dir.
+dump_target() {
+    local db="$1" root
+    for root in "${roots[@]}"; do
+        if [[ "$db" == "$root/"* ]]; then
+            printf '%s\n' "$root/_sqlite-dumps/${db#"$root/"}"
+            return 0
+        fi
+    done
+    printf '%s\n' "$DUMP_DIR$db"
+}
+
+# status file that sits next to a dump target
+target_status() {
+    local target="$1"
+    case "$target" in
+        */_sqlite-dumps/*) printf '%s\n' "${target%%/_sqlite-dumps/*}/_sqlite-dumps/_status.txt" ;;
+        *)                 printf '%s\n' "$DUMP_DIR/_status.txt" ;;
+    esac
+}
+
+# start from a clean slate for every destination
+for root in "${roots[@]}"; do
+    rm -rf "$root/_sqlite-dumps"
+    mkdir -p "$root/_sqlite-dumps"
+done
 rm -rf "$DUMP_DIR"
 mkdir -p "$DUMP_DIR"
-STATUS="$DUMP_DIR/_status.txt"
-: > "$STATUS"
 
 # `.backup` opens the source database, and opening a WAL-mode database
 # read-write needs write access (to create the -shm file). Databases owned by
 # another service user (e.g. media-manager) are retried via passwordless sudo
-# when available; the dump itself lands in $DUMP_DIR, which we own.
+# when available; the dump itself lands in a directory we own.
 dump_one() {
-    local db="$1" tmp="$2"
-    sqlite3 "$db" ".timeout 5000" ".backup '$tmp'" >>"$STATUS" 2>&1 && return 0
+    local db="$1" tmp="$2" status="$3"
+    sqlite3 "$db" ".timeout 5000" ".backup '$tmp'" >>"$status" 2>&1 && return 0
     if [[ ! -w "$db" ]] && sudo -n true 2>/dev/null; then
-        echo "note: $db not writable by $(id -un); retrying via sudo" >> "$STATUS"
-        sudo -n sqlite3 "$db" ".timeout 5000" ".backup '$tmp'" >>"$STATUS" 2>&1 && return 0
+        echo "note: $db not writable by $(id -un); retrying via sudo" >> "$status"
+        sudo -n sqlite3 "$db" ".timeout 5000" ".backup '$tmp'" >>"$status" 2>&1 && return 0
     fi
     return 1
 }
@@ -114,23 +153,25 @@ dump_one() {
 ok=0 fail=0
 
 for db in "${dbs[@]}"; do
-    dest="$DUMP_DIR$db"
+    dest="$(dump_target "$db")"
+    status="$(target_status "$dest")"
     mkdir -p "$(dirname "$dest")"
-    if dump_one "$db" "$dest.tmp" && mv "$dest.tmp" "$dest"; then
+    : >> "$status"
+    if dump_one "$db" "$dest.tmp" "$status" && mv "$dest.tmp" "$dest"; then
         if [[ "$(sqlite3 "$dest" "PRAGMA quick_check;" 2>/dev/null)" == "ok" ]]; then
-            echo "ok   $db" >> "$STATUS"
+            echo "ok   $db" >> "$status"
             ok=$((ok + 1))
         else
-            echo "FAIL $db (quick_check)" | tee -a "$STATUS"
+            echo "FAIL $db (quick_check)" | tee -a "$status"
             rm -f "$dest"
             fail=$((fail + 1))
         fi
     else
-        echo "FAIL $db (backup error, see log above)" | tee -a "$STATUS"
+        echo "FAIL $db (backup error, see log above)" | tee -a "$status"
         rm -f "$dest.tmp"
         fail=$((fail + 1))
     fi
 done
 
-echo "sqlite-backup: $ok ok, $fail failed; discovered ${#dbs[@]}; dumps in $DUMP_DIR"
+echo "sqlite-backup: $ok ok, $fail failed; discovered ${#dbs[@]}; dumps under: ${roots[*]:-}${roots[*]:+ }$DUMP_DIR"
 [[ $fail -eq 0 ]]

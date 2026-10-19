@@ -41,14 +41,6 @@
       "repo": "${storage}/backrest/db/myapp",
       "retention": "keep-daily 7 keep-weekly 4 keep-monthly 6"
     },
-    "sqlite-dumps": {
-      "enabled": false,
-      "type": "restic",
-      "src": "${home}/.local/share/backrest/sqlite-dumps",
-      "repo": "${storage}/backrest/sqlite-dumps",
-      "retention": "keep-daily 14 keep-weekly 8 keep-monthly 12",
-      "prehook": "${home}/.config/backrest/hooks/sqlite-backup.sh"
-    },
     "photos-cloud": {
       "enabled": false,
       "type": "s3",

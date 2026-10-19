@@ -293,45 +293,48 @@ Copying a live SQLite file can capture a torn WAL/database state. The tracked
 example `hooks/sqlite-backup.sh.example` (install to
 `~/.config/backrest/hooks/sqlite-backup.sh`, chmod 700) dumps databases with
 SQLite's online backup API — safe while the database is in use, WAL included —
-verifies each dump with `PRAGMA quick_check`, and writes `_status.txt` with an
-ok/FAIL line per database.
+and verifies each dump with `PRAGMA quick_check`. It only **reads** live
+databases: no live file is overwritten and no service is stopped.
 
 `~/.config/backrest/sqlite-dbs.conf` accepts, one per line:
 
-- a **directory** — scanned recursively for `*.db` / `*.sqlite` / `*.sqlite3`
-- a **file or glob**
+- a **directory** — scanned recursively for `*.db` / `*.sqlite` / `*.sqlite3`;
+  dumps go to `<directory>/_sqlite-dumps/<same relative path>`
+- a **file or glob** — dumped to `~/.local/share/backrest/sqlite-dumps/`
 - `!pattern` — fnmatch exclusion (e.g. `!*/syncthing/index-v2/*`, `!*.bak*`)
+
+Because dumps land inside the tree they belong to, the ordinary profile for
+that tree (`homelab-data`, `web-data`) contains configuration **and** consistent
+databases in one snapshot — restore one thing, get everything. Attach the hook
+as the prehook of that profile:
+
+```json
+"homelab-data": {
+  "type": "restic",
+  "src": "${fast}/services/homelab",
+  "repo": "${storage}/backup/restic/homelab-data",
+  "exclude": ["/forgejo", "/prowlarr/asp", "/paperless"],
+  "prehook": "${home}/.config/backrest/hooks/sqlite-backup.sh"
+}
+```
+
+Note the anchored (`/name`) excludes: an unanchored `forgejo` would also match
+`_sqlite-dumps/forgejo/...` and drop its database dump.
 
 Every candidate is checked against the `SQLite format 3` file header, so
 non-database `.db` files, WAL/SHM files and shelve files are skipped
-automatically. New services are picked up without touching the config.
-Databases owned by another service user are retried with passwordless `sudo`
-when available — opening a WAL database read-write needs write access.
+automatically; `_sqlite-dumps` itself is never rescanned. New services are
+picked up without touching the config. Databases owned by another service user
+are retried with passwordless `sudo` when available — opening a WAL database
+read-write needs write access. `sqlite-backup.sh --list` prints exactly which
+databases would be dumped, and each `_sqlite-dumps/_status.txt` records
+ok/FAIL per database.
 
-```
-# ~/.config/backrest/sqlite-dbs.conf
-/mnt/ssd/services/homelab
-/mnt/ssd/services/web
-!*/syncthing/index-v2/*
-!*/logs.db
-!*.bak*
-```
+Restore: after restoring the snapshot tree, copy each dump over its live path
+with the service stopped, e.g.
 
-`~/.config/backrest/hooks/sqlite-backup.sh --list` prints exactly which
-databases would be dumped. Dumps mirror the source path under
-`~/.local/share/backrest/sqlite-dumps` (e.g. `sqlite-dumps/mnt/ssd/...`).
-
-Point a small restic profile at the dump directory, and mirror it offsite with
-a second profile (same `src`, cloud `repo`, no prehook):
-
-```json
-"sqlite-dumps": {
-  "type": "restic",
-  "src": "${home}/.local/share/backrest/sqlite-dumps",
-  "repo": "${storage}/backup/restic/sqlite-dumps",
-  "retention": "keep-daily 14 keep-weekly 8 keep-monthly 12",
-  "prehook": "${home}/.config/backrest/hooks/sqlite-backup.sh"
-}
+```sh
+cp _sqlite-dumps/vaultwarden/db.sqlite3 vaultwarden/db.sqlite3
 ```
 
 `VACUUM` is a maintenance operation, not a consistency mechanism — `.backup` is
