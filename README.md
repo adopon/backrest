@@ -305,6 +305,8 @@ ok/FAIL line per database.
 Every candidate is checked against the `SQLite format 3` file header, so
 non-database `.db` files, WAL/SHM files and shelve files are skipped
 automatically. New services are picked up without touching the config.
+Databases owned by another service user are retried with passwordless `sudo`
+when available — opening a WAL database read-write needs write access.
 
 ```
 # ~/.config/backrest/sqlite-dbs.conf

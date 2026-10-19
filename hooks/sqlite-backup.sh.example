@@ -97,13 +97,26 @@ mkdir -p "$DUMP_DIR"
 STATUS="$DUMP_DIR/_status.txt"
 : > "$STATUS"
 
+# `.backup` opens the source database, and opening a WAL-mode database
+# read-write needs write access (to create the -shm file). Databases owned by
+# another service user (e.g. media-manager) are retried via passwordless sudo
+# when available; the dump itself lands in $DUMP_DIR, which we own.
+dump_one() {
+    local db="$1" tmp="$2"
+    sqlite3 "$db" ".timeout 5000" ".backup '$tmp'" >>"$STATUS" 2>&1 && return 0
+    if [[ ! -w "$db" ]] && sudo -n true 2>/dev/null; then
+        echo "note: $db not writable by $(id -un); retrying via sudo" >> "$STATUS"
+        sudo -n sqlite3 "$db" ".timeout 5000" ".backup '$tmp'" >>"$STATUS" 2>&1 && return 0
+    fi
+    return 1
+}
+
 ok=0 fail=0
 
 for db in "${dbs[@]}"; do
     dest="$DUMP_DIR$db"
     mkdir -p "$(dirname "$dest")"
-    if sqlite3 "$db" ".timeout 5000" ".backup '$dest.tmp'" >>"$STATUS" 2>&1 \
-        && mv "$dest.tmp" "$dest"; then
+    if dump_one "$db" "$dest.tmp" && mv "$dest.tmp" "$dest"; then
         if [[ "$(sqlite3 "$dest" "PRAGMA quick_check;" 2>/dev/null)" == "ok" ]]; then
             echo "ok   $db" >> "$STATUS"
             ok=$((ok + 1))
