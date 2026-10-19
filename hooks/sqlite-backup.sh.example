@@ -95,8 +95,8 @@ done
 mapfile -t dbs < <(printf '%s\n' "${dbs[@]}" | sort)
 
 if [[ ${#dbs[@]} -eq 0 ]]; then
-    echo "sqlite-backup: no databases found (check $CONF)"
-    exit 1
+    echo "sqlite-backup: no databases found (check $CONF) — leaving file backup enabled"
+    exit 0
 fi
 
 if [[ "$LIST_ONLY" == true ]]; then

@@ -275,6 +275,17 @@ Copy `hooks/.env.example` to `~/.config/backrest/hooks/.env` and fill in real
 values. Point profile `prehook`/`posthook` paths at
 `${home}/.config/backrest/hooks/...`.
 
+Hook exit codes:
+
+| Code | Meaning |
+|------|---------|
+| `0` | proceed with the profile |
+| `2` | skip the profile gracefully (e.g. the service is down) — reported as SKIP, the run stays healthy |
+| other | the profile fails and the backup is not run (no stale/incomplete snapshot) |
+
+Posthooks run only after a successful prehook, and still run when the backup
+itself fails. They do not run when the prehook skipped or failed the profile.
+
 Example pre-hook that dumps a database before backup:
 
 ```bash

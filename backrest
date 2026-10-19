@@ -267,7 +267,16 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
         continue
     fi
 
-    run_hook "$profile" "pre" || true
+    pre_rc=0
+    run_hook "$profile" "pre" || pre_rc=$?
+    if [[ "$pre_rc" -eq 2 ]]; then
+        warn "[$profile] Skipped — prehook reported the service is unavailable"
+        summary_skip+=("$profile")
+        continue
+    elif [[ "$pre_rc" -ne 0 ]]; then
+        summary_err+=("$profile")
+        continue
+    fi
 
     case "$ptype" in
         restic)

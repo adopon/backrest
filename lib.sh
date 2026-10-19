@@ -245,7 +245,7 @@ load_hook_env() {
 }
 
 run_hook() {
-    local profile="$1" hook_type="$2"
+    local profile="$1" hook_type="$2" rc=0
     if [[ "$(profile_has "$profile" "${hook_type}hook")" != "true" ]]; then
         return 0
     fi
@@ -260,10 +260,18 @@ run_hook() {
                 [[ -n "$k" ]] && hook_env+=( "$k=$(conf ".profiles.\"$profile\".hook_env.\"$k\"")" )
             done < <(conf ".profiles.\"$profile\".hook_env | keys[]?")
         fi
-        if ! env "${PROFILE_ENV[@]}" "${hook_env[@]}" "$hook" >> "$LOG_FILE" 2>&1; then
-            err "[$profile] ${hook_type}-hook failed"
-            return 1
-        fi
+        env "${PROFILE_ENV[@]}" "${hook_env[@]}" "$hook" >> "$LOG_FILE" 2>&1 || rc=$?
+        case "$rc" in
+            0) return 0 ;;
+            2)
+                info "[$profile] ${hook_type}-hook requested skip (exit 2)"
+                return 2
+                ;;
+            *)
+                err "[$profile] ${hook_type}-hook failed (exit $rc)"
+                return 1
+                ;;
+        esac
     fi
     return 0
 }
