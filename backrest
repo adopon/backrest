@@ -166,11 +166,12 @@ if [[ "$ACTION" == "snapshots" ]]; then
         exit 1
     fi
     resolve_restic_auth || exit 1
+    load_profile_env "$TARGET" || exit 1
     if [[ "$DRY_RUN" == true ]]; then
         echo "DRY-RUN [$TARGET] restic snapshots -r $repo"
         exit 0
     fi
-    restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" snapshots
+    restic_run -r "$repo" snapshots
     exit $?
 fi
 
@@ -260,6 +261,11 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
 
     echo ""
     info "========== Profile: $profile ($ptype) =========="
+
+    if ! load_profile_env "$profile"; then
+        summary_err+=("$profile")
+        continue
+    fi
 
     run_hook "$profile" "pre" || true
 

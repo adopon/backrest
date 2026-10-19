@@ -132,6 +132,28 @@ resolve_paths() {
     echo "$val"
 }
 
+# Resolve a path from the config: expands ${path} placeholders and a leading
+# ~. Relative paths are resolved against the config file's directory, so the
+# instance config (e.g. ~/.config/backrest/) can keep secrets beside itself.
+resolve_config_path() {
+    local path="$1"
+    path="$(resolve_paths "$path")"
+    path="${path/#\~/$HOME}"
+    if [[ "$path" != /* ]]; then
+        path="$(dirname "$CONFIG_FILE")/$path"
+    fi
+    printf '%s\n' "$path"
+}
+
+# A restic repository is either a local path or a backend URL. Only local
+# paths may be created with mkdir and probed with -f.
+is_remote_repo() {
+    case "$1" in
+        s3:*|b2:*|rclone:*|sftp:*|rest:*|azure:*|gs:*|swift:*|http:*|https:*) return 0 ;;
+    esac
+    return 1
+}
+
 is_mounted() {
     mountpoint --quiet "$1" 2>/dev/null
 }
@@ -206,6 +228,27 @@ load_hook_env() {
     load_env_file "$env_file"
 }
 
+# Read KEY=VALUE pairs into ENV_FILE_VARS without exporting them. Used for
+# per-profile credentials (e.g. AWS_* for a restic S3 repo), which are passed
+# to the tool via `env` so they never leak into later profiles.
+ENV_FILE_VARS=()
+read_env_file() {
+    local env_file="$1" line key val
+    ENV_FILE_VARS=()
+    [[ -f "$env_file" ]] || return 0
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        key="${line%%=*}"
+        key="${key//[[:space:]]/}"
+        [[ -z "$key" ]] && continue
+        val="${line#*=}"
+        val="${val%\"}"; val="${val#\"}"
+        val="${val%\'}"; val="${val#\'}"
+        ENV_FILE_VARS+=("$key=$val")
+    done < "$env_file"
+}
+
 run_hook() {
     local profile="$1" hook_type="$2"
     if [[ "$(profile_has "$profile" "${hook_type}hook")" != "true" ]]; then
@@ -222,7 +265,7 @@ run_hook() {
                 [[ -n "$k" ]] && hook_env+=( "$k=$(conf ".profiles.\"$profile\".hook_env.\"$k\"")" )
             done < <(conf ".profiles.\"$profile\".hook_env | keys[]?")
         fi
-        if ! env "${hook_env[@]}" "$hook" >> "$LOG_FILE" 2>&1; then
+        if ! env "${PROFILE_ENV[@]}" "${hook_env[@]}" "$hook" >> "$LOG_FILE" 2>&1; then
             err "[$profile] ${hook_type}-hook failed"
             return 1
         fi
@@ -231,6 +274,55 @@ run_hook() {
 }
 
 RESTIC_AUTH_ARGS=()
+RESTIC_GLOBAL_ARGS=()
+PROFILE_ENV=()
+
+# Load a profile's env_file (KEY=VALUE) into PROFILE_ENV. Credentials are passed
+# explicitly to each tool invocation instead of being exported globally, so a
+# profile with cloud credentials cannot leak them into unrelated profiles.
+load_profile_env() {
+    local profile="$1" env_file
+    PROFILE_ENV=()
+    if [[ "$(profile_has "$profile" "env_file")" == "true" ]]; then
+        env_file="$(profile_val "$profile" env_file)"
+    else
+        env_file="$(conf '.global.env_file // empty')"
+        [[ -n "$env_file" ]] && env_file="$(resolve_paths "$env_file")"
+    fi
+    [[ -n "$env_file" ]] || return 0
+    env_file="$(resolve_config_path "$env_file")"
+    if [[ ! -f "$env_file" ]]; then
+        err "[$profile] env_file not found: $env_file"
+        return 1
+    fi
+    read_env_file "$env_file"
+    PROFILE_ENV=("${ENV_FILE_VARS[@]}")
+    return 0
+}
+
+# Run restic with the current profile's env (e.g. AWS_* for an S3/B2 repo).
+restic_run() {
+    env "${PROFILE_ENV[@]}" restic "${RESTIC_GLOBAL_ARGS[@]}" "${RESTIC_AUTH_ARGS[@]}" "$@"
+}
+
+# True when a restic repository exists. Local repos are probed on disk; remote
+# repos (s3:, b2:, rclone:, ...) are probed with `restic cat config`, which
+# exits 10 when the repo is absent.
+repo_exists() {
+    local repo="$1"
+    if is_remote_repo "$repo"; then
+        restic_run -r "$repo" cat config >/dev/null 2>&1
+        return $?
+    fi
+    [[ -f "$repo/config" ]]
+}
+
+# Create a local repo directory; remote repos are created by `restic init`.
+ensure_repo() {
+    local repo="$1"
+    is_remote_repo "$repo" && return 0
+    ensure_dir "$repo"
+}
 
 autogen_restic_password() {
     local pw_file="${1:-${HOME}/.config/backrest/restic-password}"
@@ -253,7 +345,10 @@ autogen_restic_password() {
 }
 
 resolve_restic_auth() {
-    local pw_file pw_cmd autogen
+    local pw_file pw_cmd autogen compression
+    compression="$(conf '.global.restic_compression // empty')"
+    RESTIC_GLOBAL_ARGS=()
+    [[ -n "$compression" ]] && RESTIC_GLOBAL_ARGS=(--compression "$compression")
     pw_file="$(conf '.global.restic_password_file // empty')"
     pw_cmd="$(conf '.global.restic_password_command // empty')"
     autogen="$(conf '.global.restic_password_autogen // empty')"
@@ -290,12 +385,18 @@ resolve_restic_auth() {
 }
 
 restic_repo_init() {
-    local profile="$1" repo="$2"
-    if [[ -f "$repo/config" ]]; then
+    local profile="$1" repo="$2" rc=0
+    repo_exists "$repo" || rc=$?
+    if [[ $rc -eq 0 ]]; then
         return 0
     fi
+    if is_remote_repo "$repo" && [[ $rc -ne 10 ]]; then
+        err "[$profile] Cannot access repository $repo (restic exit $rc)"
+        err "[$profile] Check env_file credentials, the repo URL and network access"
+        return 1
+    fi
     info "[$profile] Initializing restic repo at $repo"
-    restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" init >> "$LOG_FILE" 2>&1 || {
+    restic_run -r "$repo" init >> "$LOG_FILE" 2>&1 || {
         show_tool_error "$profile" "Failed to init repo"; return 1
     }
 }
@@ -322,10 +423,19 @@ restic_backup() {
         done < <(conf ".profiles.\"$profile\".exclude[]?")
     fi
 
+    # Optional extra restic flags, e.g. ["--limit-upload", "8000"].
+    local -a extra_flags=()
+    if [[ "$(profile_has "$profile" "flags")" == "true" ]]; then
+        while IFS= read -r flag; do
+            [[ -n "$flag" ]] && extra_flags+=("$flag")
+        done < <(conf ".profiles.\"$profile\".flags[]?")
+    fi
+
     info "[$profile] Starting restic backup: $src → $repo"
-    if restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" backup "$src" \
+    if restic_run -r "$repo" backup "$src" \
         --exclude-caches \
         "${exclude_args_arr[@]}" \
+        "${extra_flags[@]}" \
         --verbose \
         >> "$LOG_FILE" 2>&1; then
         ok "[$profile] Backup completed"
@@ -369,7 +479,7 @@ restic_retention() {
     local -a keep_args=()
     while IFS= read -r a; do keep_args+=("$a"); done < <(restic_retention_args "$retention")
     info "[$profile] Applying retention: $retention"
-    restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" forget --group-by host --prune \
+    restic_run -r "$repo" forget --group-by host --prune \
         "${keep_args[@]}" >> "$LOG_FILE" 2>&1 \
         || warn "[$profile] Retention/prune had issues"
 }
@@ -387,7 +497,7 @@ restic_check() {
     esac
     if [[ ${#check_args[@]} -gt 0 ]]; then
         info "[$profile] Running integrity check ($check_mode)"
-        if restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" "${check_args[@]}" >> "$LOG_FILE" 2>&1; then
+        if restic_run -r "$repo" "${check_args[@]}" >> "$LOG_FILE" 2>&1; then
             ok "[$profile] Integrity check passed"
         else
             warn "[$profile] Integrity check found issues — see log"
@@ -406,7 +516,8 @@ backup_restic() {
 
     check_require_mount "$profile" || return 1
     check_source "$src" || return 2
-    ensure_dir "$repo" || return 1
+    load_profile_env "$profile" || return 1
+    ensure_repo "$repo" || return 1
 
     restic_repo_init "$profile" "$repo" || return 1
     restic_backup "$profile" "$src" "$repo" "$retention" || return 1
@@ -553,7 +664,8 @@ backup_sqlite() {
     fi
 
     check_source "$src" || return 2
-    ensure_dir "$repo" || return 1
+    load_profile_env "$profile" || return 1
+    ensure_repo "$repo" || return 1
 
     tmpdir="$(mktemp -d)"
     base="$(basename "$src")"
@@ -568,10 +680,19 @@ backup_sqlite() {
 
     rc=0
     restic_repo_init "$profile" "$repo" || rc=1
+
+    local -a extra_flags=()
+    if [[ "$(profile_has "$profile" "flags")" == "true" ]]; then
+        while IFS= read -r flag; do
+            [[ -n "$flag" ]] && extra_flags+=("$flag")
+        done < <(conf ".profiles.\"$profile\".flags[]?")
+    fi
+
     if [[ $rc -eq 0 ]]; then
         info "[$profile] Starting restic backup: $src → $repo"
-        if cat "$snap" | restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" backup --stdin \
-            --stdin-filename "$(restic_stdin_filename "$src")" --verbose >> "$LOG_FILE" 2>&1; then
+        if cat "$snap" | restic_run -r "$repo" backup --stdin \
+            --stdin-filename "$(restic_stdin_filename "$src")" \
+            "${extra_flags[@]}" --verbose >> "$LOG_FILE" 2>&1; then
             ok "[$profile] Backup completed"
         else
             show_tool_error "$profile" "Backup failed"

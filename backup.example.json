@@ -19,6 +19,15 @@
       "retention": "keep-daily 7 keep-weekly 4 keep-monthly 6",
       "require_mount": "${storage}"
     },
+    "photos-offsite": {
+      "enabled": false,
+      "type": "restic",
+      "src": "${fast}/media/photos",
+      "repo": "s3:https://s3.eu-central-003.backblazeb2.com/my-restic-bucket/photos",
+      "retention": "keep-daily 7 keep-weekly 4 keep-monthly 12",
+      "env_file": "~/.config/backrest/b2.env",
+      "flags": ["--limit-upload", "8000"]
+    },
     "documents": {
       "enabled": true,
       "type": "rsync",

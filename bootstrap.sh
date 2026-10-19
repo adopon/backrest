@@ -107,18 +107,28 @@ cmd_check() {
     fi
 
     echo ""
-    local p type repo status n
+    local p type repo status n rc_repo
     while IFS= read -r p; do
         type="$(profile_type "$p")"
         case "$type" in
             restic|sqlite)
                 repo="$(profile_val "$p" repo)"
-                if [[ -f "$repo/config" ]]; then
-                    n="$(restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" snapshots --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
-                    status="repo ok — ${n} snapshot(s)"
-                else
-                    status="repo MISSING: $repo"
+                rc_repo=0
+                if ! load_profile_env "$p"; then
+                    status="env_file MISSING"
                     rc=1
+                else
+                    repo_exists "$repo" || rc_repo=$?
+                    if [[ $rc_repo -eq 0 ]]; then
+                        n="$(restic_run -r "$repo" snapshots --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
+                        status="repo ok — ${n} snapshot(s)"
+                    elif [[ $rc_repo -eq 1 ]]; then
+                        status="repo MISSING: $repo"
+                        rc=1
+                    else
+                        status="repo UNREACHABLE (restic exit ${rc_repo}) — check env_file/credentials"
+                        rc=1
+                    fi
                 fi
                 ;;
             rsync|s3)
@@ -172,16 +182,17 @@ cmd_restore() {
 
     [[ -n "$target" ]] || target="$PWD/restore/$profile"
     require_restic_auth
+    load_profile_env "$profile" || exit 1
 
     local repo; repo="$(profile_val "$profile" repo)"
-    [[ -f "$repo/config" ]] || { err "Repo not found: $repo"; exit 1; }
+    repo_exists "$repo" || { err "Repo not found or unreachable: $repo"; exit 1; }
 
     mkdir -p "$target"
     local -a include_args=()
     for p in "${includes[@]}"; do include_args+=(--include "$p"); done
 
     info "[$profile] restoring '$snapshot' from $repo -> $target"
-    restic "${RESTIC_AUTH_ARGS[@]}" -r "$repo" restore "$snapshot" --target "$target" "${include_args[@]}"
+    restic_run -r "$repo" restore "$snapshot" --target "$target" "${include_args[@]}"
     ok "[$profile] restored to $target"
     echo ""
     echo "Review $target, then copy the pieces into place (see RESTORE.md)."

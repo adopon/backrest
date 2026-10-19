@@ -78,6 +78,8 @@ Settings shared across all profiles:
 | `restic_password_file` | Path to file containing the restic repo password |
 | `restic_password_command` | Command that prints the password (alternative) |
 | `restic_password_autogen` | Generate a random password into `~/.config/backrest/restic-password` on first run |
+| `restic_compression` | restic `--compression` mode (`auto`, `max`, `off`) |
+| `env_file` | Default `KEY=VALUE` file loaded for every profile (e.g. cloud credentials); a profile-level `env_file` overrides it |
 | `check` | Default integrity check: `full`, `quick`, or `never` |
 | `healthchecks_url` | Healthchecks.io ping URL (optional) |
 
@@ -104,7 +106,62 @@ Incremental, deduplicated snapshots. Requires a restic repository (auto-initiali
 
 After each backup, restic runs the configured retention policy (`forget --prune`) followed by an integrity `check`.
 
+`repo` may also be a remote backend URL. Local repos are created with `mkdir`;
+remote repos are initialized with `restic init` and checked with
+`restic cat config`, so the profile works unchanged against S3/B2. See
+[Cloud repositories and credentials](#cloud-repositories-and-credentials) below.
+
 `require_mount` guards a profile against an **unmounted** directory. If `${storage}` isn't mounted, restic would otherwise initialize a fresh repo in the empty mount-point directory and back up there (and `rclone sync` would mirror that emptiness over the remote). With `require_mount` set, the profile refuses to run until the path is a real mount point. It works on every profile type (restic/rsync/s3/sqlite).
+
+### Cloud repositories and credentials
+
+A `restic` profile can target a remote repository instead of a local path. For
+Backblaze B2, use the **S3-compatible API** — restic's own docs recommend it over
+the native `b2:` backend because of error-handling issues:
+
+```json
+"photos-offsite": {
+  "type": "restic",
+  "src": "${fast}/media/photos",
+  "repo": "s3:https://s3.eu-central-003.backblazeb2.com/my-bucket/photos",
+  "retention": "keep-daily 7 keep-weekly 4 keep-monthly 12",
+  "env_file": "~/.config/backrest/b2.env",
+  "flags": ["--limit-upload", "8000"]
+}
+```
+
+restic's S3 backend reads its credentials from standard AWS environment
+variables, so `env_file` is how they reach it:
+
+| Variable | Value |
+|----------|-------|
+| `AWS_ACCESS_KEY_ID` | B2 application key ID (S3-compatible key) |
+| `AWS_SECRET_ACCESS_KEY` | B2 application key (secret) |
+| `AWS_DEFAULT_REGION` | bucket region, e.g. `eu-central-003` |
+
+The file is a plain `KEY=VALUE` list (same syntax as `hooks/.env`); keep it
+`chmod 600`. `env_file` can be set in `global` (applies to every profile) or per
+profile (applied only to that profile's restic and hook subprocesses, so
+credentials never leak into unrelated profiles). A profile-level `env_file`
+overrides the global one. Relative paths resolve against the config file's
+directory, so `env_file: "b2.env"` next to `backup.json` works.
+
+Other notes:
+
+- Create the bucket in the B2 UI first. A bucket-scoped key usually cannot
+  create buckets, and restic will not adjust lifecycle settings for you.
+- Add the lifecycle rule **“Keep only the last version of the file”** (e.g. 1
+  day). restic's S3 backend hides deleted objects instead of deleting them; B2
+  keeps billing for hidden versions without this rule.
+- For the first upload, throttle with `flags`: `["--limit-upload", "8000"]`
+  (KiB/s). Flags are passed to the `restic backup` command only.
+- `--limit-upload` is a global restic flag, so it is also accepted on
+  `init`/`forget`/`check`; only the backup command receives profile `flags`.
+- The repo password is still the global restic password (`restic_password_file`),
+  so keep an off-host copy of it — the B2 data is unreadable without it.
+- `bootstrap.sh check` / `restore` load the same `env_file` and probe remote
+  repos with `restic cat config`, so disaster recovery from B2 works from the
+  same config.
 
 #### rsync
 
@@ -160,13 +217,14 @@ Versioned snapshots of a SQLite database using `sqlite3`'s online backup API (sa
 | `enabled` | bool | When `false`, skipped during "run all". Can still be run explicitly. Defaults to `true`. |
 | `type` | string | `restic`, `rsync`, `s3`, or `sqlite` |
 | `src` | string | Source path. Supports `${path}` placeholders and `host:path` remote references. For sqlite, the path to the `.db` file. |
-| `repo` | string | (restic/sqlite) Path to the restic repository. Created automatically. |
+| `repo` | string | (restic/sqlite) Path to the restic repository, or a backend URL (`s3:https://...`, `b2:bucket:path`, `rclone:remote:path`). Local repos are created automatically; remote repos are initialized with `restic init`. |
 | `dest` | string | (rsync/s3) Local destination directory (rsync) or rclone remote path like `remote:bucket/path` (s3). |
 | `remote_dest` | string | (rsync) Optional second destination, e.g. `user@host:/path`. |
 | `require_mount` | string | Path that must be a mount point or the profile refuses to run. Guards destructive syncs/prunes against an unmounted (empty) directory. |
 | `retention` | string | (restic/sqlite) Restic `forget` policy. For sqlite: `keep-last`, `keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`. Defaults to `keep-last 10`. |
 | `exclude` | array | (restic/rsync/s3) Glob patterns to skip. |
-| `flags` | array | (s3) Extra `rclone` flags. Defaults to `["--checksum"]`; set to override. |
+| `flags` | array | (s3) Extra `rclone` flags; defaults to `["--checksum"]`. (restic/sqlite) Extra restic flags for the backup command, e.g. `["--limit-upload", "8000"]`. |
+| `env_file` | string | `KEY=VALUE` file applied only to this profile (credentials for remote repos). Overrides `global.env_file`. |
 | `prehook` | string | Script to run before backup (e.g. database dump, stop container). |
 | `posthook` | string | Script to run after backup, even on failure (e.g. restart container). |
 | `check` | string | Per-profile integrity check override (`full`, `quick`, `never`). |

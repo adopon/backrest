@@ -18,6 +18,7 @@ repos.
 | svcsh `global.env`, `ports.env`, `stacks/**` (compose + `.env`) | restic repo | `bootstrap.sh restore` |
 | backrest `~/.config/backrest/{backup.json,hooks/.env,hooks/*.sh}` | restic repo | `bootstrap.sh restore` |
 | rclone remotes (`~/.config/rclone/rclone.conf`) | restic repo **or** password manager | restore / paste |
+| cloud repo credentials (`~/.config/backrest/b2.env`) | **password manager** (needed *before* a remote restore) | paste before `bootstrap.sh check` |
 | restic password | **off-host, never in a repo** | password manager / print |
 | service data (uploads, DBs) | restic per-service repos | `bootstrap.sh restore` |
 
@@ -45,6 +46,14 @@ consistent set of svcsh + backrest config at one timestamp.
    install -d -m 700 ~/.config/backrest
    install -m 600 /media/usb/restic-password ~/.config/backrest/restic-password
    ```
+
+   If any profile restores from a remote repo (S3/B2), also place its
+   credentials file (from the password manager) before running `check`:
+   ```sh
+   install -m 600 /media/usb/b2.env ~/.config/backrest/b2.env
+   ```
+   Without it the remote repo is unreachable — but the local repos can still be
+   checked and restored.
 
 4. **Check what's recoverable** before touching anything:
    ```sh

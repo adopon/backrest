@@ -49,6 +49,11 @@
           "type": "string",
           "description": "restic --compression value (e.g. auto, max, off)."
         },
+        "env_file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Default env file with KEY=VALUE lines loaded for every profile (e.g. AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_DEFAULT_REGION for an S3 or Backblaze B2 repository). A profile-level env_file overrides it. Supports ${path} placeholders and a leading ~; relative paths are resolved against the config file's directory."
+        },
         "check": {
           "enum": ["full", "quick", "never"],
           "description": "Default integrity check mode for restic profiles.\n- full: restic check --read-data (reads whole repo, slow)\n- quick: restic check (metadata only, fast)\n- never: skip integrity check"
@@ -89,7 +94,7 @@
         "repo": {
           "type": "string",
           "minLength": 1,
-          "description": "(restic/sqlite only) Path to the restic repository. Created/initialized automatically on first run. For sqlite, the consistent snapshot is stored here."
+          "description": "(restic/sqlite only) Path to the restic repository, or a backend URL such as s3:https://s3.eu-central-003.backblazeb2.com/bucket/path, b2:bucket:path, or rclone:remote:path. Local repos are created automatically; remote repos are initialized with restic init. Credentials for remote backends come from env_file (or the process environment)."
         },
         "dest": {
           "type": "string",
@@ -119,7 +124,12 @@
         "flags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "(s3 only) Extra rclone flags passed to the sync. Defaults to [\"--checksum\"] (compare by checksum instead of size+mtime) when unset; set this to override, e.g. [\"--size-only\"]."
+          "description": "(s3/restic/sqlite) Extra backend flags. For s3: rclone flags passed to the sync (defaults to [\"--checksum\"] when unset, e.g. [\"--size-only\"]). For restic/sqlite: extra restic flags passed to the backup command, e.g. [\"--limit-upload\", \"8000\"] to throttle the first upload."
+        },
+        "env_file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to a KEY=VALUE env file applied only to this profile's restic/hook commands (e.g. AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION for an S3 or Backblaze B2 repository). Overrides global.env_file. Supports ${path} placeholders and a leading ~; relative paths are resolved against the config file's directory."
         },
         "prehook": {
           "type": "string",

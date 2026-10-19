@@ -7,3 +7,7 @@ backup*.json
 hooks/*.sh
 hooks/.env
 !hooks/.env.example
+
+# credential env files (restic S3/B2 keys, etc.)
+*.env
+!*.env.example
