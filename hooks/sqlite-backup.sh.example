@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# Example prehook: consistent snapshots of live SQLite databases using the
+# online backup API (`.backup`), which is safe while a database is in use and
+# includes committed WAL contents. Dumps mirror the source path under
+# SQLITE_DUMP_DIR and are picked up by a small restic profile (see README,
+# "Consistent SQLite snapshots").
+#
+# Install to ~/.config/backrest/hooks/sqlite-backup.sh (chmod 700) and list
+# databases, one path or glob per line, in ~/.config/backrest/sqlite-dbs.conf.
+# Overridable via SQLITE_DBS_CONF / SQLITE_DUMP_DIR.
+
+set -euo pipefail
+
+CONF="${SQLITE_DBS_CONF:-$HOME/.config/backrest/sqlite-dbs.conf}"
+DUMP_DIR="${SQLITE_DUMP_DIR:-$HOME/.local/share/backrest/sqlite-dumps}"
+
+if [[ ! -f "$CONF" ]]; then
+    echo "sqlite-backup: no DB list at $CONF"
+    exit 1
+fi
+if ! command -v sqlite3 >/dev/null; then
+    echo "sqlite-backup: sqlite3 not found"
+    exit 1
+fi
+
+rm -rf "$DUMP_DIR"
+mkdir -p "$DUMP_DIR"
+STATUS="$DUMP_DIR/_status.txt"
+: > "$STATUS"
+
+ok=0 fail=0 skip=0
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+
+    # shellcheck disable=SC2206  # glob expansion is intended
+    matches=( $line )
+    for db in "${matches[@]}"; do
+        if [[ ! -f "$db" ]]; then
+            echo "skip $db (not found)" | tee -a "$STATUS"
+            skip=$((skip + 1))
+            continue
+        fi
+        dest="$DUMP_DIR$db"
+        mkdir -p "$(dirname "$dest")"
+        if sqlite3 "$db" ".timeout 5000" ".backup '$dest.tmp'" >>"$STATUS" 2>&1 \
+            && mv "$dest.tmp" "$dest"; then
+            if [[ "$(sqlite3 "$dest" "PRAGMA quick_check;" 2>/dev/null)" == "ok" ]]; then
+                echo "ok   $db" >> "$STATUS"
+                ok=$((ok + 1))
+            else
+                echo "FAIL $db (quick_check)" | tee -a "$STATUS"
+                rm -f "$dest"
+                fail=$((fail + 1))
+            fi
+        else
+            echo "FAIL $db (backup error, see log above)" | tee -a "$STATUS"
+            rm -f "$dest.tmp"
+            fail=$((fail + 1))
+        fi
+    done
+done < "$CONF"
+
+echo "sqlite-backup: $ok ok, $skip skipped, $fail failed; dumps in $DUMP_DIR"
+[[ $fail -eq 0 ]]

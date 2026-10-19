@@ -287,6 +287,39 @@ load_env_file "$HOME/.config/backrest/hooks/.env"
 docker exec myapp pg_dump -U postgres > /tmp/backup.sql
 ```
 
+### Consistent SQLite snapshots
+
+Copying a live SQLite file can capture a torn WAL/database state. The tracked
+example `hooks/sqlite-backup.sh.example` (install to
+`~/.config/backrest/hooks/sqlite-backup.sh`, chmod 700) dumps every database
+listed in `~/.config/backrest/sqlite-dbs.conf` (path or glob per line) with
+SQLite's online backup API — safe while the database is in use, WAL included —
+verifies each dump with `PRAGMA quick_check`, and writes `_status.txt` with an
+ok/skip/FAIL line per database.
+
+```bash
+# ~/.config/backrest/sqlite-dbs.conf
+/mnt/ssd/services/homelab/vaultwarden/db.sqlite3
+/srv/myapp/data/*.db
+```
+
+Point a small restic profile at the dump directory (dumps mirror the source
+path, e.g. `sqlite-dumps/mnt/ssd/...`):
+
+```json
+"sqlite-dumps": {
+  "type": "restic",
+  "src": "${home}/.local/share/backrest/sqlite-dumps",
+  "repo": "${storage}/backup/restic/sqlite-dumps",
+  "retention": "keep-daily 14 keep-weekly 8 keep-monthly 12",
+  "prehook": "${home}/.config/backrest/hooks/sqlite-backup.sh"
+}
+```
+
+Mirror it offsite with a second profile (same `src`, cloud `repo`, no prehook).
+`VACUUM` is a maintenance operation, not a consistency mechanism — `.backup` is
+what makes the copy safe.
+
 ## Scheduling
 
 Add a crontab entry:
