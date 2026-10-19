@@ -43,7 +43,10 @@ The instance `backup.json` has four sections:
 - `profiles` — each key is a profile name; each profile has a `type`
 - `log_dir` / `log_retention_days` — logging
 
-Path interpolation (`${name}`) is applied in `profile_val()` and to `restic_password_file`/`restic_password_command` via `resolve_paths()`. Other global fields are read raw via `conf`.
+Path interpolation (`${name}`) is applied in `profile_val()`, to
+`restic_password_file`/`restic_password_command` via `resolve_paths()`, and to
+`exclude` patterns for every backend (restic/rsync/rclone). Other global fields
+are read raw via `conf`.
 
 `env_file` (global or per-profile) is a `KEY=VALUE` file for credentials of
 remote repos (e.g. `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/

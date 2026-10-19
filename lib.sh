@@ -414,7 +414,7 @@ restic_backup() {
     local -a exclude_args_arr=()
     if [[ "$(profile_has "$profile" "exclude")" == "true" ]]; then
         while IFS= read -r pattern; do
-            [[ -n "$pattern" ]] && exclude_args_arr+=(--exclude "$pattern")
+            [[ -n "$pattern" ]] && exclude_args_arr+=(--exclude "$(resolve_paths "$pattern")")
         done < <(conf ".profiles.\"$profile\".exclude[]?")
     fi
 
@@ -543,7 +543,7 @@ backup_rsync() {
     local -a exclude_args=()
     if [[ "$(profile_has "$profile" "exclude")" == "true" ]]; then
         while IFS= read -r pattern; do
-            [[ -n "$pattern" ]] && exclude_args+=(--exclude "$pattern")
+            [[ -n "$pattern" ]] && exclude_args+=(--exclude "$(resolve_paths "$pattern")")
         done < <(conf ".profiles.\"$profile\".exclude[]?")
     fi
 
@@ -576,7 +576,7 @@ backup_rsync_remote() {
     local -a exclude_args=()
     if [[ "$(profile_has "$profile" "exclude")" == "true" ]]; then
         while IFS= read -r pattern; do
-            [[ -n "$pattern" ]] && exclude_args+=(--exclude "$pattern")
+            [[ -n "$pattern" ]] && exclude_args+=(--exclude "$(resolve_paths "$pattern")")
         done < <(conf ".profiles.\"$profile\".exclude[]?")
     fi
 
@@ -619,7 +619,7 @@ backup_s3() {
     local -a exclude_args=()
     if [[ "$(profile_has "$profile" "exclude")" == "true" ]]; then
         while IFS= read -r pattern; do
-            [[ -n "$pattern" ]] && exclude_args+=(--exclude "$pattern")
+            [[ -n "$pattern" ]] && exclude_args+=(--exclude "$(resolve_paths "$pattern")")
         done < <(conf ".profiles.\"$profile\".exclude[]?")
     fi
 

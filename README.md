@@ -313,13 +313,20 @@ as the prehook of that profile:
   "type": "restic",
   "src": "${fast}/services/homelab",
   "repo": "${storage}/backup/restic/homelab-data",
-  "exclude": ["/forgejo", "/prowlarr/asp", "/paperless"],
+  "exclude": [
+    "${fast}/services/homelab/forgejo",
+    "${fast}/services/homelab/prowlarr/asp",
+    "${fast}/services/homelab/paperless"
+  ],
   "prehook": "${home}/.config/backrest/hooks/sqlite-backup.sh"
 }
 ```
 
-Note the anchored (`/name`) excludes: an unanchored `forgejo` would also match
-`_sqlite-dumps/forgejo/...` and drop its database dump.
+Exclude patterns are matched against the full path, so a leading `/` means an
+**absolute filesystem path** — not "relative to the backup root". Use absolute
+paths (as above) when the excluded live tree has a sidecar under
+`_sqlite-dumps/<name>/` that must stay included. A bare basename pattern such
+as `forgejo` would also drop `_sqlite-dumps/forgejo/...`.
 
 Every candidate is checked against the `SQLite format 3` file header, so
 non-database `.db` files, WAL/SHM files and shelve files are skipped
