@@ -201,22 +201,38 @@ check_dest_parent() {
     return 1
 }
 
-load_env_file() {
-    local env_file="$1"
+# Read KEY=VALUE pairs into ENV_FILE_VARS without exporting them. This is a
+# data format (like systemd's EnvironmentFile= / Docker's --env-file), not
+# shell source: values are never executed, comments are lines starting with #,
+# and an optional leading "export " is accepted.
+ENV_FILE_VARS=()
+read_env_file() {
+    local env_file="$1" line key val
+    ENV_FILE_VARS=()
     [[ -f "$env_file" ]] || return 0
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-        local key="${line%%=*}"
-        key="${key//[[:space:]]/}"
-        [[ -z "$key" ]] && continue
-        if [[ -z "${!key:-}" ]]; then
-            local val="${line#*=}"
+        if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            key="${BASH_REMATCH[2]}"
+            val="${BASH_REMATCH[3]}"
             val="${val%\"}"; val="${val#\"}"
             val="${val%\'}"; val="${val#\'}"
-            export "$key=$val"
+            ENV_FILE_VARS+=("$key=$val")
         fi
     done < "$env_file"
+}
+
+load_env_file() {
+    local env_file="$1" kv key val
+    [[ -f "$env_file" ]] || return 0
+    read_env_file "$env_file"
+    for kv in "${ENV_FILE_VARS[@]}"; do
+        key="${kv%%=*}"
+        val="${kv#*=}"
+        [[ -n "${!key:-}" ]] && continue
+        export "$key=$val"
+    done
 }
 
 load_hook_env() {
@@ -226,27 +242,6 @@ load_hook_env() {
     env_file="$(dirname "$CONFIG_FILE")/hooks/.env"
     [[ -f "$env_file" ]] || env_file="$SCRIPT_DIR/hooks/.env"
     load_env_file "$env_file"
-}
-
-# Read KEY=VALUE pairs into ENV_FILE_VARS without exporting them. Used for
-# per-profile credentials (e.g. AWS_* for a restic S3 repo), which are passed
-# to the tool via `env` so they never leak into later profiles.
-ENV_FILE_VARS=()
-read_env_file() {
-    local env_file="$1" line key val
-    ENV_FILE_VARS=()
-    [[ -f "$env_file" ]] || return 0
-    while IFS= read -r line; do
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-        key="${line%%=*}"
-        key="${key//[[:space:]]/}"
-        [[ -z "$key" ]] && continue
-        val="${line#*=}"
-        val="${val%\"}"; val="${val#\"}"
-        val="${val%\'}"; val="${val#\'}"
-        ENV_FILE_VARS+=("$key=$val")
-    done < "$env_file"
 }
 
 run_hook() {

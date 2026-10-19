@@ -140,7 +140,9 @@ variables, so `env_file` is how they reach it:
 | `AWS_DEFAULT_REGION` | bucket region, e.g. `eu-central-003` |
 
 The file is a plain `KEY=VALUE` list (same syntax as `hooks/.env`); keep it
-`chmod 600`. `env_file` can be set in `global` (applies to every profile) or per
+`chmod 600`. It is parsed as data — like systemd's `EnvironmentFile=` or
+Docker's `--env-file` — rather than `source`d, so it cannot execute shell code.
+`env_file` can be set in `global` (applies to every profile) or per
 profile (applied only to that profile's restic and hook subprocesses, so
 credentials never leak into unrelated profiles). A profile-level `env_file`
 overrides the global one. Relative paths resolve against the config file's
