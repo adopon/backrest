@@ -122,11 +122,20 @@ cmd_check() {
                     if [[ $rc_repo -eq 0 ]]; then
                         n="$(restic_run -r "$repo" snapshots --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
                         status="repo ok — ${n} snapshot(s)"
-                    elif [[ $rc_repo -eq 1 ]]; then
+                    elif [[ $rc_repo -eq 10 ]]; then
+                        status="repo not initialized yet: $repo"
+                        rc=1
+                    elif [[ $rc_repo -eq 11 ]]; then
+                        status="repo is locked (restic exit 11)"
+                        rc=1
+                    elif [[ $rc_repo -eq 12 ]]; then
+                        status="wrong restic password (restic exit 12)"
+                        rc=1
+                    elif [[ $rc_repo -eq 1 ]] && ! is_remote_repo "$repo"; then
                         status="repo MISSING: $repo"
                         rc=1
                     else
-                        status="repo UNREACHABLE (restic exit ${rc_repo}) — check env_file/credentials"
+                        status="repo UNREACHABLE (restic exit ${rc_repo}) — check env_file/credentials, URL and network"
                         rc=1
                     fi
                 fi
