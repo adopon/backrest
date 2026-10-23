@@ -267,6 +267,13 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
         continue
     fi
 
+    # Check the mount guard before the prehook: a 45-second Immich dump that
+    # is then thrown away because /mnt/hdd is missing is just added load.
+    if ! check_require_mount "$profile"; then
+        summary_err+=("$profile")
+        continue
+    fi
+
     pre_rc=0
     run_hook "$profile" "pre" || pre_rc=$?
     if [[ "$pre_rc" -eq 2 ]]; then
@@ -280,23 +287,20 @@ for profile in "${PROFILES_TO_RUN[@]}"; do
 
     case "$ptype" in
         restic)
-            backup_restic "$profile"
-            rc=$?
+            # `set -e` would abort the whole run on a single profile failure.
+            if backup_restic "$profile"; then rc=0; else rc=$?; fi
             ;;
         rsync)
-            backup_rsync "$profile"
-            rc=$?
+            if backup_rsync "$profile"; then rc=0; else rc=$?; fi
             if [[ $rc -eq 0 ]] || [[ $rc -eq 2 ]]; then
                 backup_rsync_remote "$profile" || true
             fi
             ;;
         s3)
-            backup_s3 "$profile"
-            rc=$?
+            if backup_s3 "$profile"; then rc=0; else rc=$?; fi
             ;;
         sqlite)
-            backup_sqlite "$profile"
-            rc=$?
+            if backup_sqlite "$profile"; then rc=0; else rc=$?; fi
             ;;
         *)
             warn "[$profile] Unknown type '$ptype' — skipping"
