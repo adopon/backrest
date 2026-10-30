@@ -61,7 +61,12 @@
         "healthchecks_url": {
           "type": "string",
           "format": "uri",
-          "description": "Healthchecks.io check URL. Pings <url>/start on start, <url> on success, <url>/fail on failure. Empty disables."
+          "description": "Healthchecks.io check URL. Pings <url>/start on start, <url> on success, <url>/fail on failure. Empty disables. Takes precedence over healthchecks_url_file."
+        },
+        "healthchecks_url_file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to a file containing the Healthchecks.io check URL. Supports ${path} placeholders and a leading ~; relative paths are resolved against the config file's directory. Used only when healthchecks_url is empty."
         }
       }
     },

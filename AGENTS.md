@@ -39,7 +39,7 @@ A bare profile name is shorthand for `run <profile>` (backward compat). Auxiliar
 The instance `backup.json` has four sections:
 
 - `paths` — named placeholders substituted anywhere via `${name}`
-- `global` — shared settings: restic auth, default `check` mode, `healthchecks_url`, optional `env_file`
+- `global` — shared settings: restic auth, default `check` mode, `healthchecks_url`/`healthchecks_url_file`, optional `env_file`
 - `profiles` — each key is a profile name; each profile has a `type`
 - `log_dir` / `log_retention_days` — logging
 

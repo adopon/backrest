@@ -175,7 +175,7 @@ if [[ "$ACTION" == "snapshots" ]]; then
     exit $?
 fi
 
-HEALTHCHECK_URL="${HEALTHCHECKS_URL:-$(conf '.global.healthchecks_url // empty')}"
+HEALTHCHECK_URL="$(resolve_healthchecks_url)"
 trap on_exit EXIT
 
 setup_logging

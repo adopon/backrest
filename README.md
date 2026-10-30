@@ -82,6 +82,7 @@ Settings shared across all profiles:
 | `env_file` | Default `KEY=VALUE` file loaded for every profile (e.g. cloud credentials); a profile-level `env_file` overrides it |
 | `check` | Default integrity check: `full`, `quick`, or `never` |
 | `healthchecks_url` | Healthchecks.io ping URL (optional) |
+| `healthchecks_url_file` | Path to a file containing the ping URL (optional; keeps data JSON secret-free) |
 
 ### `profiles`
 
@@ -407,3 +408,16 @@ Set `healthchecks_url` in `global` to your check URL. backrest pings:
 - `<url>/start` at the beginning
 - `<url>` on success
 - `<url>/fail` on failure
+
+If you don't want the URL in `backup.json` (and its diffs), point
+`healthchecks_url_file` at a `0600` file containing the URL instead:
+
+```json
+"global": {
+  "restic_password_file": "~/.config/backrest/restic-password",
+  "healthchecks_url_file": "~/.config/backrest/healthchecks-url"
+}
+```
+
+Precedence is `$HEALTHCHECKS_URL`, then `healthchecks_url`, then
+`healthchecks_url_file`. The file is read as one line.

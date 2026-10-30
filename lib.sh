@@ -145,6 +145,38 @@ resolve_config_path() {
     printf '%s\n' "$path"
 }
 
+# Resolve the Healthchecks.io URL. Precedence:
+#   1. $HEALTHCHECKS_URL
+#   2. global.healthchecks_url
+#   3. global.healthchecks_url_file (first line, whitespace trimmed)
+# Keeping the URL in a file lets backup.json stay secret-free and diffable.
+resolve_healthchecks_url() {
+    local url file
+    url="${HEALTHCHECKS_URL:-}"
+    if [[ -n "$url" ]]; then
+        printf '%s\n' "$url"
+        return 0
+    fi
+    url="$(conf '.global.healthchecks_url // empty')"
+    if [[ -n "$url" ]]; then
+        printf '%s\n' "$url"
+        return 0
+    fi
+    file="$(conf '.global.healthchecks_url_file // empty')"
+    [[ -n "$file" ]] || return 0
+    file="$(resolve_config_path "$file")"
+    if [[ ! -f "$file" ]]; then
+        err "healthchecks_url_file not found: $file"
+        return 1
+    fi
+    url="$(head -n 1 "$file" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    if [[ -z "$url" ]]; then
+        err "healthchecks_url_file is empty: $file"
+        return 1
+    fi
+    printf '%s\n' "$url"
+}
+
 # A restic repository is either a local path or a backend URL. Only local
 # paths may be created with mkdir and probed with -f.
 is_remote_repo() {
